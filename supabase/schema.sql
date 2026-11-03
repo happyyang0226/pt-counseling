@@ -169,3 +169,46 @@ grant execute on function public.cs_available_slots() to authenticated;
 -- insert into public.cs_profiles (id, name, role)
 --   select id, '양회송', 'admin' from auth.users where email = '교수이메일'
 --   on conflict (id) do update set role = 'admin';
+
+-- 5) 1학년 학생 명단 (명단에 있는 학번만 가입 가능)
+create table if not exists public.cs_roster (
+  student_no text primary key,
+  name text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.cs_roster enable row level security;
+drop policy if exists cs_roster_admin_all on public.cs_roster;
+create policy cs_roster_admin_all on public.cs_roster for all
+  using (public.cs_is_admin()) with check (public.cs_is_admin());
+
+-- 가입 전에 학번 확인 (이름은 가운데 글자를 가려서 돌려줌)
+create or replace function public.cs_roster_lookup(p_student_no text)
+returns json language sql stable security definer set search_path = public as $$
+  select case
+    when r.student_no is null then json_build_object('found', false)
+    else json_build_object(
+      'found', true,
+      'masked_name', case when char_length(r.name) <= 1 then r.name
+                          when char_length(r.name) = 2 then left(r.name,1) || '*'
+                          else left(r.name,1) || repeat('*', char_length(r.name)-2) || right(r.name,1) end,
+      'registered', exists (select 1 from public.cs_profiles p where p.student_no = r.student_no))
+  end
+  from (select 1) d left join public.cs_roster r on r.student_no = trim(p_student_no);
+$$;
+grant execute on function public.cs_roster_lookup(text) to anon, authenticated;
+
+-- 가입 시 명단 확인 + 이름은 명단에서 가져오기
+create or replace function public.cs_handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_name text;
+begin
+  if coalesce(new.raw_user_meta_data->>'app','') <> 'counsel' then return new; end if;
+  select name into v_name from public.cs_roster where student_no = new.raw_user_meta_data->>'student_no';
+  if v_name is null then
+    raise exception '학생 명단에 없는 학번입니다.';
+  end if;
+  insert into public.cs_profiles (id, student_no, name)
+  values (new.id, new.raw_user_meta_data->>'student_no', v_name);
+  return new;
+end;
+$$;

@@ -29,8 +29,8 @@
     </form>
 
     <form id="form-student-signup" class="tabpane hidden">
+      <p class="hint">교수님이 등록한 1학년 명단에 있는 학번만 가입할 수 있습니다.</p>
       <label>학번<input name="student_no" required inputmode="numeric" /></label>
-      <label>이름<input name="name" required /></label>
       <label>접속 코드 (6자 이상, 직접 정하기)<input name="code" type="password" required minlength="6" autocomplete="new-password" /></label>
       <label>접속 코드 확인<input name="code2" type="password" required minlength="6" autocomplete="new-password" /></label>
       <p class="hint">주민번호, 연락처 같은 정보는 받지 않습니다. 접속 코드는 잊지 않게 기억해 두세요.</p>
@@ -99,6 +99,7 @@
       <button class="tab" data-admin="slots">상담 시간</button>
       <button class="tab" data-admin="students">학생별 이력</button>
       <button class="tab" data-admin="followup">후속 조치</button>
+      <button class="tab" data-admin="roster">학생 명단</button>
     </nav>
 
     <div id="admin-requests" class="adminpane">
@@ -137,6 +138,24 @@
         <div id="student-list"></div>
       </div>
       <div class="card hidden" id="student-detail"></div>
+    </div>
+
+    <div id="admin-roster" class="adminpane hidden">
+      <div class="card">
+        <h2>1학년 학생 명단 등록</h2>
+        <p class="hint">한 줄에 한 명씩 "학번 이름"을 적으세요. 엑셀에서 학번·이름 두 칸을 복사해 그대로 붙여 넣어도 됩니다. 이미 있는 학번은 이름만 바뀝니다.</p>
+        <form id="form-roster">
+          <textarea name="list" rows="8" placeholder="20260001 김물리&#10;20260002 이치료"></textarea>
+          <button class="primary" type="submit">명단에 추가</button>
+        </form>
+        <p id="roster-msg" class="msg"></p>
+      </div>
+      <div class="card">
+        <div class="row between">
+          <h2>등록된 명단 <span id="roster-count" class="hint"></span></h2>
+        </div>
+        <div id="roster-list"></div>
+      </div>
     </div>
 
     <div id="admin-followup" class="adminpane hidden">

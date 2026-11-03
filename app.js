@@ -53,7 +53,7 @@ $("#form-student-login").onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   const { error } = await sb.auth.signInWithPassword({ email: studentEmail(f.get("student_no")), password: f.get("code") });
-  if (error) return ($("#login-msg").textContent = "학번 또는 접속 코드가 맞지 않습니다.");
+  if (error) return ($("#login-msg").textContent = /invalid/i.test(error.message) ? "학번 또는 접속 코드가 맞지 않습니다." : "로그인할 수 없습니다: " + error.message);
   boot();
 };
 
@@ -61,16 +61,21 @@ $("#form-student-signup").onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   const no = String(f.get("student_no")).trim();
-  if (!/^\d{4,12}$/.test(no)) return ($("#login-msg").textContent = "학번은 숫자로 입력해 주세요.");
-  if (f.get("code") !== f.get("code2")) return ($("#login-msg").textContent = "접속 코드가 서로 다릅니다.");
+  const msg = (t) => ($("#login-msg").textContent = t);
+  if (!/^\d{4,12}$/.test(no)) return msg("학번은 숫자로 입력해 주세요.");
+  if (f.get("code") !== f.get("code2")) return msg("접속 코드가 서로 다릅니다.");
+  const { data: info, error: le } = await sb.rpc("cs_roster_lookup", { p_student_no: no });
+  if (le) return msg("학번을 확인하지 못했습니다: " + le.message);
+  if (!info?.found) return msg("1학년 명단에 없는 학번입니다. 학번을 다시 확인하거나 교수님께 문의하세요.");
+  if (info.registered) return msg("이미 가입된 학번입니다. 학생 로그인으로 들어가세요.");
+  if (!confirm(`${info.masked_name} 학생이 맞나요?\n학번 ${no}\n\n이 학번으로 가입합니다.`)) return;
   const { error } = await sb.auth.signUp({
     email: studentEmail(no),
     password: f.get("code"),
-    options: { data: { app: "counsel", student_no: no, name: String(f.get("name")).trim() } },
+    options: { data: { app: "counsel", student_no: no } },
   });
   if (error) {
-    const m = /registered|exists/i.test(error.message) ? "이미 가입된 학번입니다. 로그인해 주세요." : "가입 중 문제가 생겼습니다: " + error.message;
-    return ($("#login-msg").textContent = m);
+    return msg(/registered|exists/i.test(error.message) ? "이미 가입된 학번입니다. 학생 로그인으로 들어가세요." : "가입 중 문제가 생겼습니다: " + error.message);
   }
   boot();
 };
@@ -79,7 +84,7 @@ $("#form-admin-login").onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   const { error } = await sb.auth.signInWithPassword({ email: f.get("email"), password: f.get("password") });
-  if (error) return ($("#login-msg").textContent = "이메일 또는 비밀번호가 맞지 않습니다.");
+  if (error) return ($("#login-msg").textContent = /invalid/i.test(error.message) ? "이메일 또는 비밀번호가 맞지 않습니다." : "로그인할 수 없습니다: " + error.message);
   boot();
 };
 
@@ -152,7 +157,7 @@ $$("#view-admin .tab").forEach((b) => (b.onclick = () => loadAdmin(b.dataset.adm
 function loadAdmin(pane) {
   $$("#view-admin .tab").forEach((x) => x.classList.toggle("active", x.dataset.admin === pane));
   $$(".adminpane").forEach((p) => show(p, p.id === `admin-${pane}`));
-  ({ requests: loadRequests, slots: loadSlots, students: loadStudents, followup: loadFollowup })[pane]();
+  ({ requests: loadRequests, slots: loadSlots, students: loadStudents, followup: loadFollowup, roster: loadRoster })[pane]();
 }
 
 $("#status-filter").onchange = () => loadRequests();
@@ -340,6 +345,48 @@ async function loadFollowup() {
   $$("[data-done]", box).forEach((b) => (b.onclick = async () => {
     await sb.from("cs_notes").update({ needs_followup: false }).eq("id", b.dataset.done);
     loadFollowup();
+  }));
+}
+
+// 학생 명단
+$("#form-roster").onsubmit = async (e) => {
+  e.preventDefault();
+  const rows = [], bad = [];
+  String(new FormData(e.target).get("list")).split(/\r?\n/).forEach((line) => {
+    const t = line.trim();
+    if (!t) return;
+    const m = t.match(/^(\d{4,12})[\s,\t]+(.+)$/);
+    if (m) rows.push({ student_no: m[1], name: m[2].replace(/[\s,\t]+/g, " ").trim() });
+    else bad.push(t);
+  });
+  if (!rows.length) return ($("#roster-msg").textContent = "추가할 줄이 없습니다. \"학번 이름\" 형식으로 적어 주세요.");
+  const { error } = await sb.from("cs_roster").upsert(rows, { onConflict: "student_no" });
+  $("#roster-msg").textContent = error ? error.message
+    : `${rows.length}명을 명단에 넣었습니다.` + (bad.length ? ` 형식이 맞지 않아 뺀 줄: ${bad.join(" / ")}` : "");
+  if (!error) e.target.reset();
+  loadRoster();
+};
+
+async function loadRoster() {
+  const [{ data: roster, error }, { data: profs }] = await Promise.all([
+    sb.from("cs_roster").select("*").order("student_no"),
+    sb.from("cs_profiles").select("student_no").eq("role", "student"),
+  ]);
+  const box = $("#roster-list");
+  if (error) return (box.textContent = error.message);
+  const joined = new Set((profs || []).map((p) => p.student_no));
+  const nJoined = roster.filter((r) => joined.has(r.student_no)).length;
+  $("#roster-count").textContent = `(${roster.length}명 중 ${nJoined}명 가입)`;
+  if (!roster.length) return (box.innerHTML = `<p class="hint">아직 등록된 학생이 없습니다.</p>`);
+  box.innerHTML = `<table><thead><tr><th>학번</th><th>이름</th><th>가입</th><th></th></tr></thead><tbody>
+    ${roster.map((r) => `<tr><td>${esc(r.student_no)}</td><td>${esc(r.name)}</td>
+      <td>${joined.has(r.student_no) ? `<span class="badge s-확정">가입함</span>` : `<span class="badge">미가입</span>`}</td>
+      <td>${joined.has(r.student_no) ? "" : `<button class="small" data-rdel="${esc(r.student_no)}">삭제</button>`}</td></tr>`).join("")}
+  </tbody></table>`;
+  $$("[data-rdel]", box).forEach((b) => (b.onclick = async () => {
+    if (!confirm(`${b.dataset.rdel} 학생을 명단에서 뺄까요?`)) return;
+    await sb.from("cs_roster").delete().eq("student_no", b.dataset.rdel);
+    loadRoster();
   }));
 }
 
