@@ -295,3 +295,48 @@ dl.answers { grid-template-columns: 120px 1fr; }
   dl.answers { grid-template-columns: 1fr; }
 }
 dl.answers dd, .sum-row dd { white-space: normal; }
+
+/* ===== 첫 화면: 넓은 화면에서 가로 2단, 한 화면에 보이기 ===== */
+@media (min-width: 900px) {
+  body.landing main {
+    max-width: 1280px;
+    display: grid;
+    grid-template-columns: minmax(340px, 400px) minmax(0, 1fr);
+    grid-template-areas: "hero areas" "login areas";
+    grid-template-rows: auto 1fr;
+    column-gap: 20px; row-gap: 14px;
+    align-items: start;
+    padding-top: 14px; padding-bottom: 0;
+  }
+  body.landing #intro-top { grid-area: hero; margin: 0; grid-template-columns: 1fr; padding: 20px 22px; gap: 0; }
+  body.landing #intro-top .hero-art { display: none; }
+  body.landing #intro-top h1 { font-size: 22px; margin-bottom: 6px; }
+  body.landing #intro-top p { font-size: 14px; line-height: 1.55; margin-bottom: 8px; }
+  body.landing .hero-facts { flex-direction: column; gap: 3px; font-size: 13px; }
+  body.landing #view-login { grid-area: login; margin: 0; max-width: none; padding: 16px 20px; }
+  body.landing #view-login .tabs { margin-bottom: 10px; }
+  body.landing #view-login label { margin-bottom: 8px; }
+  body.landing #view-login input { padding: 8px 12px; }
+  body.landing #view-login .hint { margin: 4px 0; }
+  body.landing #intro-areas { grid-area: areas; display: flex; flex-direction: column; gap: 14px; }
+  body.landing #intro-areas .card { margin: 0; padding: 16px 18px; }
+  body.landing #intro-areas h2 { font-size: 17px; margin-bottom: 4px; }
+  body.landing #intro-areas .hint { margin: 0 0 10px; }
+  body.landing #area-list-intro { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  body.landing .area { min-width: 0; }
+  body.landing #area-list-center { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  body.landing .area { padding: 10px 12px; }
+  body.landing .area-head { margin-bottom: 2px; }
+  body.landing .area-head b { font-size: 15px; }
+  body.landing .area p { font-size: 13px; line-height: 1.45; }
+  body.landing .area-ex { display: none; }
+  body.landing .area.center p { font-size: 12.5px; }
+}
+@media (min-width: 900px) and (max-width: 1150px) {
+  body.landing main { grid-template-columns: 320px minmax(0, 1fr); }
+  body.landing #area-list-intro { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  body.landing #area-list-center { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.landing #intro-top p { font-size: 13.5px; line-height: 1.5; }
+  body.landing #intro-top .eyebrow { display: none; }
+  body.landing .area-ex { display: none; }
+}

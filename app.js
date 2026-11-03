@@ -85,6 +85,7 @@ async function boot() {
   $("#who").innerHTML = `${esc(me.name)}${me.role === "admin" ? " 교수님" : ` (${esc(me.student_no)})`} <button id="logout" class="link">로그아웃</button>`;
   $("#logout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
   show($("#view-login"), false);
+  document.body.classList.remove("landing");
   show($("#intro-top"), false);
   show($("#intro-areas"), false);
   if (me.role === "admin") {
@@ -101,6 +102,7 @@ async function boot() {
 
 function showLogin(msg = "") {
   $("#who").innerHTML = "";
+  document.body.classList.add("landing");
   show($("#intro-top"));
   show($("#intro-areas"));
   show($("#view-login"));
