@@ -289,3 +289,44 @@ alter function public.cs_prepare_request() set search_path = public;
 alter function public.cs_guard_request_update() set search_path = public;
 alter function public.cs_prepare_question() set search_path = public;
 revoke execute on function public.cs_handle_new_user() from anon, authenticated, public;
+
+-- ============================================================
+-- 2026-11-03: 상담 분야 변경, 분야별 피드백, 학기당 의무 상담 3회
+-- ============================================================
+alter table public.cs_requests drop constraint if exists cs_requests_topic_check;
+alter table public.cs_requests add constraint cs_requests_topic_check check (topic = any (array[
+ '취업','학업','진로','학교생활','교우관계','기타',
+ '학교생활 적응','학업·성적','진로·국가고시','대인관계','경제·장학','건강·심리']));
+
+create table if not exists public.cs_feedback (
+  id bigint generated always as identity primary key,
+  note_id bigint references public.cs_notes(id) on delete cascade,
+  request_id bigint references public.cs_requests(id) on delete set null,
+  student_id uuid not null references public.cs_profiles(id) on delete cascade,
+  topic text not null check (topic in ('취업','학업','진로','학교생활','교우관계','기타')),
+  content text not null check (char_length(content) between 1 and 4000),
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+create index if not exists cs_feedback_student_idx on public.cs_feedback(student_id, created_at desc);
+alter table public.cs_feedback enable row level security;
+create policy cs_feedback_admin_all on public.cs_feedback for all to authenticated
+  using (public.cs_is_admin()) with check (public.cs_is_admin());
+create policy cs_feedback_student_select on public.cs_feedback for select to authenticated
+  using (student_id = auth.uid());
+
+create or replace function public.cs_mark_feedback_read()
+returns void language sql security definer set search_path = public as $$
+  update public.cs_feedback set read_at = now() where student_id = auth.uid() and read_at is null;
+$$;
+revoke all on function public.cs_mark_feedback_read() from public, anon;
+grant execute on function public.cs_mark_feedback_read() to authenticated;
+
+create or replace function public.cs_my_counsel_count(p_since date)
+returns int language sql stable security definer set search_path = public as $$
+  select count(*)::int from public.cs_notes where student_id = auth.uid() and counsel_date >= p_since;
+$$;
+revoke all on function public.cs_my_counsel_count(date) from public, anon;
+grant execute on function public.cs_my_counsel_count(date) to authenticated;
+
+alter publication supabase_realtime add table public.cs_feedback;

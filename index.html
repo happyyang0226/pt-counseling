@@ -67,6 +67,23 @@
   <section id="view-student" class="hidden">
     <p class="notice">이 웹앱은 지도교수와의 상담을 돕기 위한 것으로, 전문 심리상담을 대신하지 않습니다. 마음이 많이 힘들 때는 아래 연락처로 바로 도움을 요청해 주세요.</p>
 
+    <div class="card progress-card">
+      <div class="row between">
+        <h2 id="my-sem-title">이번 학기 상담</h2>
+        <b id="my-count" class="count-big">0 / 3회</b>
+      </div>
+      <div class="dots" id="my-dots"></div>
+      <p id="my-count-msg" class="hint">이번 학기에는 지도교수 상담을 3번 받아야 합니다.</p>
+    </div>
+
+    <div class="card" id="feedback-card">
+      <div class="row between">
+        <h2>교수님 피드백 <span id="fb-new" class="badge new hidden">새 피드백</span></h2>
+      </div>
+      <div class="chips topic-filter" id="fb-filter"></div>
+      <div id="my-feedback"></div>
+    </div>
+
     <div class="card">
       <h2>상담 신청</h2>
       <form id="form-request">
@@ -80,8 +97,8 @@
           </label>
           <label>상담 분야
             <select name="topic" required>
-              <option>학교생활 적응</option><option>학업·성적</option><option>진로·국가고시</option>
-              <option>대인관계</option><option>경제·장학</option><option>건강·심리</option><option>기타</option>
+              <option>취업</option><option>학업</option><option>진로</option>
+              <option>학교생활</option><option>교우관계</option><option>기타</option>
             </select>
           </label>
         </div>
@@ -165,7 +182,7 @@
         <div id="dash-week"></div>
       </div>
       <div class="card">
-        <h2>이번 학기 아직 상담하지 않은 학생 <span id="dash-sem" class="hint"></span></h2>
+        <h2>이번 학기 의무 상담(3회) 미달 학생 <span id="dash-sem" class="hint"></span></h2>
         <div id="dash-none"></div>
       </div>
     </div>
@@ -278,12 +295,21 @@
     <p id="note-student" class="hint"></p>
     <div class="row">
       <label>상담 날짜<input type="date" name="counsel_date" required /></label>
-      <label>분야<input name="topic" /></label>
+      <label>주 상담 분야
+        <select name="topic">
+          <option>취업</option><option>학업</option><option>진로</option>
+          <option>학교생활</option><option>교우관계</option><option>기타</option>
+        </select>
+      </label>
     </div>
-    <label>상담 내용<textarea name="content" rows="4"></textarea></label>
-    <label>교수 의견<textarea name="opinion" rows="3"></textarea></label>
-    <label class="private">교수만 보는 메모 (학생에게 보이지 않음)<textarea name="private_memo" rows="3"></textarea></label>
-    <label class="public">학생에게 공개할 요약·과제<textarea name="public_summary" rows="3"></textarea></label>
+    <fieldset class="fb-box">
+      <legend>학생에게 보낼 분야별 피드백 <span class="hint">(저장하면 학생 화면에 바로 보입니다)</span></legend>
+      <div class="chips" id="fb-topics"></div>
+      <div id="fb-fields"></div>
+    </fieldset>
+    <label>상담 내용 (교수 기록)<textarea name="content" rows="3"></textarea></label>
+    <label>교수 의견<textarea name="opinion" rows="2"></textarea></label>
+    <label class="private">교수만 보는 메모 (학생에게 보이지 않음)<textarea name="private_memo" rows="2"></textarea></label>
     <label>후속 조치<textarea name="followup" rows="2"></textarea></label>
     <div class="row">
       <label class="check"><input type="checkbox" name="needs_followup" /> 후속 조치 필요</label>

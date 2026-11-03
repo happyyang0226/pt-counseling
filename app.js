@@ -14,7 +14,8 @@ const fmt = (iso) => new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seo
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" }) : "");
 const studentEmail = (no) => `${String(no).trim()}@${CFG.STUDENT_EMAIL_DOMAIN}`;
 const CRISIS_RE = /(죽고\s*싶|자살|자해|사라지고\s*싶|살기\s*싫)/;
-const TOPICS = ["학교생활 적응", "학업·성적", "진로·국가고시", "대인관계", "경제·장학", "건강·심리", "기타"];
+const TOPICS = ["취업", "학업", "진로", "학교생활", "교우관계", "기타"];
+const REQUIRED = 3; // 한 학기 의무 상담 횟수
 const IDLE_MIN = 20;
 
 let me = null; // cs_profiles 행
@@ -155,6 +156,68 @@ async function loadStudent() {
   sel.disabled = !slots?.length;
   loadMyRequests();
   loadPublicQuestions();
+  loadMyProgress();
+  loadMyFeedback();
+  watchFeedback();
+}
+
+// 이번 학기 의무 상담 진행 상황
+async function loadMyProgress() {
+  const sem = semesterStart();
+  const { data: n } = await sb.rpc("cs_my_counsel_count", { p_since: sem.start });
+  const cnt = n || 0;
+  $("#my-sem-title").textContent = `${sem.label} 상담`;
+  $("#my-count").textContent = `${cnt} / ${REQUIRED}회`;
+  $("#my-count").classList.toggle("done", cnt >= REQUIRED);
+  $("#my-dots").innerHTML = Array.from({ length: Math.max(REQUIRED, cnt) }, (_, i) => `<span class="dot ${i < cnt ? "on" : ""}"></span>`).join("");
+  $("#my-count-msg").textContent = cnt >= REQUIRED
+    ? "이번 학기 의무 상담을 모두 마쳤습니다. 더 필요하면 언제든 신청하세요."
+    : `이번 학기에는 지도교수 상담을 ${REQUIRED}번 받아야 합니다. ${REQUIRED - cnt}번 남았습니다.`;
+}
+
+// 교수님 피드백 (분야별)
+let fbTopic = "";
+let myFeedback = [];
+async function loadMyFeedback() {
+  const { data } = await sb.from("cs_feedback").select("*").order("created_at", { ascending: false });
+  myFeedback = data || [];
+  const unread = myFeedback.filter((f) => !f.read_at).length;
+  show($("#fb-new"), unread > 0);
+  $("#fb-new").textContent = `새 피드백 ${unread}`;
+  const counts = Object.fromEntries(TOPICS.map((t) => [t, myFeedback.filter((f) => f.topic === t).length]));
+  $("#fb-filter").innerHTML = [["", `전체 ${myFeedback.length}`], ...TOPICS.map((t) => [t, `${t} ${counts[t]}`])]
+    .map(([v, l]) => `<button type="button" class="chip-btn ${fbTopic === v ? "active" : ""}" data-fbt="${v}">${l}</button>`).join("");
+  $$("[data-fbt]").forEach((b) => (b.onclick = () => { fbTopic = b.dataset.fbt; loadMyFeedback(); }));
+  const list = myFeedback.filter((f) => !fbTopic || f.topic === fbTopic);
+  $("#my-feedback").innerHTML = list.length ? list.map((f) => `
+    <div class="item fb-item ${f.read_at ? "" : "unread"}">
+      <div class="row between"><span><span class="badge topic">${esc(f.topic)}</span>${f.read_at ? "" : `<span class="badge new">새</span>`}</span>
+        <span class="hint">${new Date(f.created_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" })}</span></div>
+      <p>${esc(f.content)}</p>
+    </div>`).join("")
+    : `<p class="hint">${fbTopic ? `${esc(fbTopic)} 분야 피드백이 아직 없습니다.` : "상담을 마치면 교수님 피드백이 여기에 바로 나타납니다."}</p>`;
+  if (unread) setTimeout(() => sb.rpc("cs_mark_feedback_read"), 4000); // 화면에 보인 뒤 읽음 처리
+}
+
+let fbChannel = null;
+function watchFeedback() {
+  if (fbChannel) return;
+  fbChannel = sb.channel("my-feedback")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "cs_feedback", filter: `student_id=eq.${me.id}` }, () => {
+      toast("교수님 피드백이 새로 도착했습니다.");
+      loadMyFeedback();
+      loadMyProgress();
+      loadMyRequests();
+    })
+    .subscribe();
+}
+
+function toast(text) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = text;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
 }
 
 function updateCrisisBox() {
@@ -289,8 +352,11 @@ async function loadDashboard() {
     .sort((a, b) => (b.crisis_flag - a.crisis_flag) || ((b.worry_level || 0) - (a.worry_level || 0)));
   const upcoming = open.filter((r) => r.slots && new Date(r.slots.starts_at) >= now && new Date(r.slots.starts_at) <= week)
     .sort((a, b) => new Date(a.slots.starts_at) - new Date(b.slots.starts_at));
-  const met = new Set((notes || []).map((n) => n.student_id));
-  const none = studentsIn.filter((s) => !met.has(s.id));
+  const semCnt = {};
+  (notes || []).forEach((n) => (semCnt[n.student_id] = (semCnt[n.student_id] || 0) + 1));
+  const none = studentsIn.filter((s) => (semCnt[s.id] || 0) < REQUIRED)
+    .sort((a, b) => (semCnt[a.id] || 0) - (semCnt[b.id] || 0));
+  const doneN = studentsIn.length - none.length;
   const pending = open.filter((r) => r.status === "대기").length;
 
   $("#dash-stats").innerHTML = [
@@ -298,6 +364,7 @@ async function loadDashboard() {
     ["주의 학생", alerts.length, "requests", alerts.length ? "warn" : ""],
     ["7일 내 상담", upcoming.length, "slots"],
     ["답변 안 한 질문", qCount || 0, "questions"],
+    [`의무 ${REQUIRED}회 완료 학생`, `${doneN}/${studentsIn.length}`, "students"],
   ].map(([t, n, go, cls]) => `<button class="stat ${cls || ""}" data-go="${go}"><b>${n}</b><span>${t}</span></button>`).join("");
   $$("[data-go]").forEach((b) => (b.onclick = () => loadAdmin(b.dataset.go)));
 
@@ -317,8 +384,8 @@ async function loadDashboard() {
 
   $("#dash-sem").textContent = `(${sem.label}, ${none.length}명)`;
   $("#dash-none").innerHTML = !studentsIn.length ? `<p class="hint">가입한 학생이 없습니다.</p>`
-    : none.length ? `<div class="chips">${none.map((s) => `<span class="chip">${esc(s.name)} <small>${esc(s.student_no)} ${CMAP[s.student_no] ? CLASS_NAME[CMAP[s.student_no]] : ""}</small></span>`).join("")}</div>`
-    : `<p class="hint">모든 학생과 이번 학기 상담을 했습니다.</p>`;
+    : none.length ? `<div class="chips">${none.map((s) => `<span class="chip">${esc(s.name)} <b class="cnt c${semCnt[s.id] || 0}">${semCnt[s.id] || 0}/${REQUIRED}</b> <small>${CMAP[s.student_no] ? CLASS_NAME[CMAP[s.student_no]] : ""}</small></span>`).join("")}</div>`
+    : `<p class="hint">모든 학생이 이번 학기 의무 상담 ${REQUIRED}회를 마쳤습니다.</p>`;
 }
 
 $("#status-filter").onchange = () => loadRequests();
@@ -360,16 +427,33 @@ async function loadRequests() {
   $$("[data-note]", box).forEach((b) => (b.onclick = () => openNote(data.find((r) => String(r.id) === b.dataset.note))));
 }
 
-// 상담 일지
-let noteReq = null;
-function openNote(r) {
-  noteReq = r;
+// 상담 일지 + 분야별 피드백
+// noteCtx: { request: 신청 행 또는 null, student: { id, name, student_no } }
+let noteCtx = null;
+function renderFbFields(checked) {
+  $("#fb-topics").innerHTML = TOPICS.map((t) => `
+    <label class="chip-check"><input type="checkbox" value="${t}" ${checked.includes(t) ? "checked" : ""} /> ${t}</label>`).join("");
+  const draw = () => {
+    const keep = Object.fromEntries($$("#fb-fields textarea").map((x) => [x.dataset.topic, x.value]));
+    const on = $$("#fb-topics input:checked").map((x) => x.value);
+    $("#fb-fields").innerHTML = on.map((t) => `
+      <label class="public">${t} 피드백<textarea rows="3" data-topic="${t}" placeholder="${t} 분야에 대해 학생에게 전할 내용">${esc(keep[t] || "")}</textarea></label>`).join("")
+      || `<p class="hint">피드백을 보낼 분야를 하나 이상 고르세요.</p>`;
+  };
+  $$("#fb-topics input").forEach((x) => (x.onchange = draw));
+  $("#fb-fields").innerHTML = "";
+  draw();
+}
+function openNote(r, student) {
+  noteCtx = { request: r || null, student: student || { id: r.student_id, name: r.profiles?.name, student_no: r.profiles?.student_no } };
   const f = $("#form-note");
   f.reset();
   f.counsel_date.value = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
-  f.topic.value = r.topic;
-  f.public_summary.value = r.public_summary || "";
-  $("#note-student").textContent = `${r.profiles?.name} (${r.profiles?.student_no}) · ${r.slots ? fmt(r.slots.starts_at) : ""}`;
+  const topic = TOPICS.includes(r?.topic) ? r.topic : "기타";
+  f.topic.value = topic;
+  renderFbFields([topic]);
+  const s = noteCtx.student;
+  $("#note-student").textContent = `${s.name} (${s.student_no}) ${CMAP[s.student_no] ? CLASS_NAME[CMAP[s.student_no]] : ""}` + (r?.slots ? ` · ${fmt(r.slots.starts_at)}` : " · 신청 없이 진행한 상담");
   $("#note-msg").textContent = "";
   $("#note-dialog").showModal();
 }
@@ -377,9 +461,12 @@ $("#note-cancel").onclick = () => $("#note-dialog").close();
 $("#form-note").onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
+  const fbs = $$("#fb-fields textarea").map((x) => ({ topic: x.dataset.topic, content: x.value.trim() })).filter((x) => x.content);
+  if (!fbs.length && !confirm("학생에게 보낼 피드백이 비어 있습니다. 피드백 없이 상담 기록만 저장할까요?")) return;
+  const req = noteCtx.request;
   const note = {
-    request_id: noteReq.id,
-    student_id: noteReq.student_id,
+    request_id: req?.id ?? null,
+    student_id: noteCtx.student.id,
     counsel_date: f.get("counsel_date"),
     topic: f.get("topic"),
     content: f.get("content"),
@@ -389,12 +476,20 @@ $("#form-note").onsubmit = async (e) => {
     needs_followup: f.get("needs_followup") === "on",
     next_date: f.get("next_date") || null,
   };
-  const { error } = await sb.from("cs_notes").insert(note);
+  const { data: saved, error } = await sb.from("cs_notes").insert(note).select("id").single();
   if (error) return ($("#note-msg").textContent = error.message);
-  const { error: e2 } = await sb.from("cs_requests").update({ status: "완료", public_summary: f.get("public_summary") || null }).eq("id", noteReq.id);
-  if (e2) return ($("#note-msg").textContent = e2.message);
+  if (fbs.length) {
+    const { error: ef } = await sb.from("cs_feedback").insert(fbs.map((x) => ({
+      ...x, note_id: saved.id, request_id: req?.id ?? null, student_id: noteCtx.student.id })));
+    if (ef) return ($("#note-msg").textContent = "기록은 저장했지만 피드백을 보내지 못했습니다: " + ef.message);
+  }
+  if (req && req.status !== "완료") {
+    const { error: e2 } = await sb.from("cs_requests").update({ status: "완료" }).eq("id", req.id);
+    if (e2) return ($("#note-msg").textContent = e2.message);
+  }
   $("#note-dialog").close();
-  loadRequests();
+  toast(fbs.length ? `저장했습니다. ${noteCtx.student.name} 학생에게 피드백 ${fbs.length}건이 바로 전달됐습니다.` : "상담 기록을 저장했습니다.");
+  if (curPane === "students") showHistory(noteCtx.student); else loadAdmin(curPane);
 };
 
 // 상담 시간
@@ -459,31 +554,45 @@ async function loadStudents() {
   const box = $("#student-list");
   if (!students?.length) return (box.innerHTML = `<p class="hint">가입한 학생이 없습니다.</p>`);
   box.innerHTML = `<table><thead><tr><th>반</th><th>학번</th><th>이름</th><th>이번 학기</th><th>전체</th><th></th></tr></thead><tbody>
-    ${students.map((s) => `<tr><td>${classTag(s.student_no)}</td><td>${esc(s.student_no)}</td><td>${esc(s.name)}</td><td>${count[s.id] || 0}회</td><td>${total[s.id] || 0}회</td>
+    ${students.map((s) => `<tr><td>${classTag(s.student_no)}</td><td>${esc(s.student_no)}</td><td>${esc(s.name)}</td><td><b class="cnt ${(count[s.id] || 0) >= REQUIRED ? "ok" : "c" + (count[s.id] || 0)}">${count[s.id] || 0}/${REQUIRED}회</b></td><td>${total[s.id] || 0}회</td>
       <td><button class="small" data-hist="${s.id}">보기</button></td></tr>`).join("")}
   </tbody></table>`;
   $$("[data-hist]", box).forEach((b) => (b.onclick = () => showHistory(students.find((s) => s.id === b.dataset.hist))));
 }
 
 async function showHistory(s) {
-  const [{ data }, { data: reqs }] = await Promise.all([
+  const sem = semesterStart();
+  const [{ data }, { data: reqs }, { data: fbs }] = await Promise.all([
     sb.from("cs_notes").select("*").eq("student_id", s.id).order("counsel_date", { ascending: false }),
     sb.from("cs_requests").select("created_at, topic, concern, worry_level, crisis_flag").eq("student_id", s.id).order("created_at", { ascending: false }),
+    sb.from("cs_feedback").select("*").eq("student_id", s.id).order("created_at", { ascending: false }),
   ]);
+  const fbByNote = {};
+  (fbs || []).forEach((f) => (fbByNote[f.note_id] ||= []).push(f));
+  const semN = (data || []).filter((n) => n.counsel_date >= sem.start).length;
   const box = $("#student-detail");
   show(box);
-  box.innerHTML = `<h2>${esc(s.name)} (${esc(s.student_no)}) ${classTag(s.student_no)} 상담 이력</h2>
-    <p class="hint">개인정보 동의: ${s.consent_at ? new Date(s.consent_at).toLocaleDateString("ko-KR") : "아직 안 함"}</p>
-    <h3>상담 일지</h3>` +
-    (data?.length ? data.map(noteHTML).join("") : `<p class="hint">상담 일지가 없습니다.</p>`) +
+  box.innerHTML = `<div class="row between"><h2>${esc(s.name)} (${esc(s.student_no)}) ${classTag(s.student_no)} 상담 이력</h2>
+      <button class="small primary" id="add-note">상담 기록·피드백 추가</button></div>
+    <p class="hint">${sem.label} 상담 <b class="cnt ${semN >= REQUIRED ? "ok" : "c" + semN}">${semN}/${REQUIRED}회</b> · 개인정보 동의: ${s.consent_at ? new Date(s.consent_at).toLocaleDateString("ko-KR") : "아직 안 함"}</p>
+    <h3>상담 일지와 보낸 피드백</h3>` +
+    (data?.length ? data.map((n) => noteHTML(n, fbByNote[n.id] || [])).join("") : `<p class="hint">상담 일지가 없습니다.</p>`) +
     `<h3>사전 질문지 응답</h3>` +
     (reqs?.length ? reqs.map((r) => `<div class="item ${r.crisis_flag ? "flag" : ""}"><b>${new Date(r.created_at).toLocaleDateString("ko-KR")} · ${esc(r.topic)}</b> ${worryBadge(r.worry_level)}<p>${esc(r.concern) || "-"}</p></div>`).join("") : `<p class="hint">응답이 없습니다.</p>`);
+  $("#add-note").onclick = () => openNote(null, s);
+  $$("[data-fbdel]", box).forEach((b) => (b.onclick = async () => {
+    if (!confirm("이 피드백을 삭제할까요? 학생 화면에서도 사라집니다.")) return;
+    await sb.from("cs_feedback").delete().eq("id", b.dataset.fbdel);
+    showHistory(s);
+  }));
   box.scrollIntoView({ behavior: "smooth" });
 }
 
-const noteHTML = (n) => `
+const noteHTML = (n, fbs = []) => `
   <div class="item">
     <b>${fmtDate(n.counsel_date)} · ${esc(n.topic)}</b>
+    ${fbs.map((f) => `<div class="fb-sent"><span class="badge topic">${esc(f.topic)}</span> <span class="hint">${f.read_at ? "학생 확인함" : "학생 미확인"}</span>
+      <button class="small link-btn" data-fbdel="${f.id}">삭제</button><p>${esc(f.content)}</p></div>`).join("")}
     <dl>
       <dt>상담 내용</dt><dd>${esc(n.content) || "-"}</dd>
       <dt>교수 의견</dt><dd>${esc(n.opinion) || "-"}</dd>
@@ -511,10 +620,11 @@ $("#export-summary").onclick = async () => {
     sb.from("cs_notes").select("student_id, counsel_date, topic"),
   ]);
   const topicOf = (t) => (TOPICS.includes(t) ? t : "기타");
-  const rows = [["반", "학번", "이름", `${sem.label} 상담`, "전체 상담", ...TOPICS.map((t) => `${t}(전체)`)]];
+  const rows = [["반", "학번", "이름", `${sem.label} 상담`, `의무 ${REQUIRED}회 충족`, "전체 상담", ...TOPICS.map((t) => `${t}(전체)`)]];
   (students || []).filter((s) => inClass(s.student_no)).forEach((s) => {
     const mine = (notes || []).filter((n) => n.student_id === s.id);
-    rows.push([CLASS_NAME[CMAP[s.student_no]] || "", s.student_no, s.name, mine.filter((n) => n.counsel_date >= sem.start).length, mine.length,
+    rows.push([CLASS_NAME[CMAP[s.student_no]] || "", s.student_no, s.name, mine.filter((n) => n.counsel_date >= sem.start).length,
+      mine.filter((n) => n.counsel_date >= sem.start).length >= REQUIRED ? "충족" : "미달", mine.length,
       ...TOPICS.map((t) => mine.filter((n) => topicOf(n.topic) === t).length)]);
   });
   downloadCSV(`상담횟수_${classFilter ? CLASS_NAME[classFilter] + "_" : ""}${today()}.csv`, rows);
@@ -523,12 +633,17 @@ $("#export-summary").onclick = async () => {
 $("#export-notes").onclick = async () => {
   const withPrivate = $("#export-private").checked;
   if (withPrivate && !confirm("교수 메모가 포함된 파일입니다. 외부로 보내지 말고 안전하게 보관해 주세요. 내려받을까요?")) return;
-  const { data, error } = await sb.from("cs_notes").select("*, profiles:cs_profiles(name, student_no)").order("counsel_date");
+  const [{ data, error }, { data: fbs }] = await Promise.all([
+    sb.from("cs_notes").select("*, profiles:cs_profiles(name, student_no)").order("counsel_date"),
+    sb.from("cs_feedback").select("note_id, topic, content"),
+  ]);
   if (error) return alert(error.message);
-  const head = ["상담일", "반", "학번", "이름", "분야", "상담 내용", "교수 의견", ...(withPrivate ? ["교수 메모"] : []), "후속 조치", "다음 상담 예정일"];
+  const fbText = {};
+  (fbs || []).forEach((f) => (fbText[f.note_id] = (fbText[f.note_id] ? fbText[f.note_id] + "\n" : "") + `[${f.topic}] ${f.content}`));
+  const head = ["상담일", "반", "학번", "이름", "분야", "상담 내용", "교수 의견", ...(withPrivate ? ["교수 메모"] : []), "학생 피드백", "후속 조치", "다음 상담 예정일"];
   const rows = [head, ...(data || []).filter((n) => inClass(n.profiles?.student_no)).map((n) => [n.counsel_date,
     CLASS_NAME[CMAP[n.profiles?.student_no]] || "", n.profiles?.student_no, n.profiles?.name, n.topic, n.content, n.opinion,
-    ...(withPrivate ? [n.private_memo] : []), n.followup, n.next_date])];
+    ...(withPrivate ? [n.private_memo] : []), fbText[n.id] || "", n.followup, n.next_date])];
   downloadCSV(`상담기록_${classFilter ? CLASS_NAME[classFilter] + "_" : ""}${today()}.csv`, rows);
 };
 
