@@ -1,7 +1,10 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
 const CFG = window.APP_CONFIG;
-const sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+// 로그인 정보는 탭을 닫으면 지워지는 sessionStorage에만 둔다 (공용 PC 대비)
+const sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true },
+});
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -11,29 +14,62 @@ const fmt = (iso) => new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seo
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" }) : "");
 const studentEmail = (no) => `${String(no).trim()}@${CFG.STUDENT_EMAIL_DOMAIN}`;
 const CRISIS_RE = /(죽고\s*싶|자살|자해|사라지고\s*싶|살기\s*싫)/;
+const TOPICS = ["학교생활 적응", "학업·성적", "진로·국가고시", "대인관계", "경제·장학", "건강·심리", "기타"];
+const IDLE_MIN = 20;
+
+let me = null; // cs_profiles 행
+let centerPhone = "";
+
+const centerHTML = () => centerPhone
+  ? `${esc(CFG.COUNSEL_CENTER)} <a href="tel:${esc(centerPhone.replace(/[^0-9]/g, ""))}">${esc(centerPhone)}</a>`
+  : esc(CFG.COUNSEL_CENTER);
 
 const crisisHTML = () => `
   <strong>혼자 견디지 않아도 됩니다.</strong><br />
   지금 많이 힘들다면 바로 도움을 요청해 주세요.<br />
-  · 정신건강 위기상담전화 <a href="tel:109"><b>109</b></a> (24시간)<br />
-  · ${esc(CFG.COUNSEL_CENTER)}<br />
+  · 자살예방상담전화 <a href="tel:109"><b>109</b></a> (24시간)<br />
+  · 정신건강위기상담 <a href="tel:15770199">1577-0199</a><br />
+  · ${centerHTML()}<br />
   · 위급한 상황이면 <a href="tel:119">119</a> 또는 <a href="tel:112">112</a><br />
   교수님도 이 내용을 확인하고 빨리 연락드릴게요.`;
 
-let me = null; // profiles 행
+// ---------- 자동 로그아웃 ----------
+let idleTimer = null;
+function resetIdle() {
+  clearTimeout(idleTimer);
+  if (!me) return;
+  idleTimer = setTimeout(async () => {
+    sessionStorage.setItem("logout-msg", `${IDLE_MIN}분 동안 사용하지 않아 안전을 위해 자동으로 로그아웃했습니다.`);
+    await sb.auth.signOut();
+    location.reload();
+  }, IDLE_MIN * 60 * 1000);
+}
+["click", "keydown", "touchstart", "scroll", "mousemove"].forEach((ev) =>
+  window.addEventListener(ev, resetIdle, { passive: true }));
 
 // ---------- 시작 ----------
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) return showLogin();
+  if (!session) return showLogin(sessionStorage.getItem("logout-msg") || "");
+  sessionStorage.removeItem("logout-msg");
   const { data, error } = await sb.from("cs_profiles").select("*").eq("id", session.user.id).single();
   if (error || !data) { await sb.auth.signOut(); return showLogin("사용자 정보를 찾을 수 없습니다. 다시 로그인해 주세요."); }
   me = data;
+  resetIdle();
+  loadSettings();
   $("#who").innerHTML = `${esc(me.name)}${me.role === "admin" ? " 교수님" : ` (${esc(me.student_no)})`} <button id="logout" class="link">로그아웃</button>`;
   $("#logout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
   show($("#view-login"), false);
-  if (me.role === "admin") { show($("#view-admin")); loadAdmin("requests"); }
-  else { show($("#view-student")); loadStudent(); }
+  if (me.role === "admin") {
+    show($("#help-bar"), false);
+    show($("#view-admin"));
+    loadAdmin("dashboard");
+  } else if (!me.consent_at) {
+    show($("#view-consent"));
+  } else {
+    show($("#view-student"));
+    loadStudent();
+  }
 }
 
 function showLogin(msg = "") {
@@ -41,6 +77,28 @@ function showLogin(msg = "") {
   show($("#view-login"));
   $("#login-msg").textContent = msg;
 }
+
+async function loadSettings() {
+  const { data } = await sb.from("cs_settings").select("*");
+  centerPhone = (data || []).find((r) => r.key === "center_phone")?.value || "";
+  $("#help-center").innerHTML = centerHTML();
+  if ($("#form-settings")) $("#form-settings").center_phone.value = centerPhone;
+}
+
+// ---------- 개인정보 동의 ----------
+$("#consent-yes").onclick = async () => {
+  const { error } = await sb.rpc("cs_give_consent");
+  if (error) return ($("#consent-msg").textContent = "저장하지 못했습니다: " + error.message);
+  me.consent_at = new Date().toISOString();
+  show($("#view-consent"), false);
+  show($("#view-student"));
+  loadStudent();
+};
+$("#consent-no").onclick = async () => {
+  if (!confirm("동의하지 않으면 웹앱을 사용할 수 없습니다. 로그아웃할까요?\n교수님 연구실로 직접 찾아와 상담을 받을 수 있습니다.")) return;
+  await sb.auth.signOut();
+  location.reload();
+};
 
 // ---------- 로그인 / 가입 ----------
 $$("#view-login .tab").forEach((b) => (b.onclick = () => {
@@ -96,13 +154,17 @@ async function loadStudent() {
   show($("#no-slot"), !slots?.length);
   sel.disabled = !slots?.length;
   loadMyRequests();
+  loadPublicQuestions();
 }
 
-$("#concern").addEventListener("input", (e) => {
-  const hit = CRISIS_RE.test(e.target.value);
+function updateCrisisBox() {
+  const f = $("#form-request");
+  const hit = CRISIS_RE.test(f.concern.value) || f.querySelector('[name="worry_level"]:checked')?.value === "5";
   $("#crisis-live").innerHTML = hit ? crisisHTML() : "";
   show($("#crisis-live"), hit);
-});
+}
+$("#concern").addEventListener("input", updateCrisisBox);
+$$('[name="worry_level"]').forEach((r) => r.addEventListener("change", updateCrisisBox));
 
 $("#form-request").onsubmit = async (e) => {
   e.preventDefault();
@@ -113,6 +175,7 @@ $("#form-request").onsubmit = async (e) => {
     mode: f.get("mode"),
     topic: f.get("topic"),
     concern: f.get("concern"),
+    worry_level: Number(f.get("worry_level")),
     satisfaction: Number(f.get("satisfaction")),
     wish: f.get("wish"),
   };
@@ -124,8 +187,9 @@ $("#form-request").onsubmit = async (e) => {
     return loadStudent();
   }
   $("#request-msg").textContent = "신청했습니다. 교수님이 확정하면 상태가 바뀝니다.";
+  const keepCrisis = CRISIS_RE.test(row.concern || "") || row.worry_level === 5;
   e.target.reset();
-  show($("#crisis-live"), CRISIS_RE.test(row.concern || ""));
+  show($("#crisis-live"), keepCrisis);
   loadStudent();
 };
 
@@ -140,7 +204,7 @@ async function loadMyRequests() {
         <b>${r.slots ? fmt(r.slots.starts_at) : "시간 미정"} · ${esc(r.mode)} · ${esc(r.topic)}</b>
         <span class="badge s-${esc(r.status)}">${esc(r.status)}</span>
       </div>
-      ${r.public_summary ? `<p class="summary"><b>교수님 상담 요약</b><br />${esc(r.public_summary)}</p>` : ""}
+      ${r.public_summary ? `<p class="summary"><b>교수님 상담 요약·과제</b><br />${esc(r.public_summary)}</p>` : ""}
       ${r.status === "대기" ? `<button class="small" data-cancel="${r.id}">신청 취소</button>` : ""}
     </div>`).join("");
   $$("[data-cancel]", box).forEach((b) => (b.onclick = async () => {
@@ -151,13 +215,90 @@ async function loadMyRequests() {
   }));
 }
 
+// 익명 질문 (학생)
+$("#form-question").onsubmit = async (e) => {
+  e.preventDefault();
+  const content = String(new FormData(e.target).get("content")).trim();
+  if (content.length < 2) return;
+  const { error } = await sb.from("cs_questions").insert({ content });
+  if (error) return ($("#question-msg").textContent = "보내지 못했습니다: " + error.message);
+  $("#question-msg").textContent = "익명으로 보냈습니다. 답변이 달리면 아래 목록에 보입니다.";
+  e.target.reset();
+  if (CRISIS_RE.test(content)) { $("#question-msg").innerHTML = `<div class="crisis">${crisisHTML()}</div>`; }
+};
+
+async function loadPublicQuestions() {
+  const { data } = await sb.from("cs_questions").select("content, answer, answered_at").order("answered_at", { ascending: false }).limit(30);
+  const box = $("#public-questions");
+  box.innerHTML = data?.length
+    ? `<h3>답변한 질문</h3>` + data.map((q) => `<div class="item"><p><b>Q.</b> ${esc(q.content)}</p><p class="summary"><b>A.</b> ${esc(q.answer)}</p></div>`).join("")
+    : "";
+}
+
 // ---------- 교수 화면 ----------
 $$("#view-admin .tab").forEach((b) => (b.onclick = () => loadAdmin(b.dataset.admin)));
 
 function loadAdmin(pane) {
   $$("#view-admin .tab").forEach((x) => x.classList.toggle("active", x.dataset.admin === pane));
   $$(".adminpane").forEach((p) => show(p, p.id === `admin-${pane}`));
-  ({ requests: loadRequests, slots: loadSlots, students: loadStudents, followup: loadFollowup, roster: loadRoster })[pane]();
+  ({ dashboard: loadDashboard, requests: loadRequests, slots: loadSlots, students: loadStudents, followup: loadFollowup, questions: loadQuestions, roster: loadRoster })[pane]();
+}
+
+function semesterStart() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1;
+  if (m >= 9) return { start: `${y}-09-01`, label: `${y}년 2학기` };
+  if (m >= 3) return { start: `${y}-03-01`, label: `${y}년 1학기` };
+  return { start: `${y - 1}-09-01`, label: `${y - 1}년 2학기·겨울방학` };
+}
+
+const worryBadge = (w) => (w ? `<span class="badge ${w >= 5 ? "w-5" : w >= 4 ? "w-4" : ""}">고민 ${w}/5</span>` : "");
+
+// 대시보드
+async function loadDashboard() {
+  const sem = semesterStart();
+  const now = new Date(), week = new Date(now.getTime() + 7 * 864e5);
+  const [{ data: reqs }, { data: students }, { data: notes }, { count: qCount }] = await Promise.all([
+    sb.from("cs_requests").select("*, profiles:cs_profiles(name, student_no), slots:cs_slots(starts_at, duration_min)").in("status", ["대기", "확정"]),
+    sb.from("cs_profiles").select("id, name, student_no").eq("role", "student").order("student_no"),
+    sb.from("cs_notes").select("student_id, counsel_date").gte("counsel_date", sem.start),
+    sb.from("cs_questions").select("id", { count: "exact", head: true }).is("answer", null),
+  ]);
+  const open = reqs || [];
+  const alerts = open.filter((r) => r.crisis_flag || (r.worry_level || 0) >= 4)
+    .sort((a, b) => (b.crisis_flag - a.crisis_flag) || ((b.worry_level || 0) - (a.worry_level || 0)));
+  const upcoming = open.filter((r) => r.slots && new Date(r.slots.starts_at) >= now && new Date(r.slots.starts_at) <= week)
+    .sort((a, b) => new Date(a.slots.starts_at) - new Date(b.slots.starts_at));
+  const met = new Set((notes || []).map((n) => n.student_id));
+  const none = (students || []).filter((s) => !met.has(s.id));
+  const pending = open.filter((r) => r.status === "대기").length;
+
+  $("#dash-stats").innerHTML = [
+    ["확정 대기 신청", pending, "requests"],
+    ["주의 학생", alerts.length, "requests", alerts.length ? "warn" : ""],
+    ["7일 내 상담", upcoming.length, "slots"],
+    ["답변 안 한 질문", qCount || 0, "questions"],
+  ].map(([t, n, go, cls]) => `<button class="stat ${cls || ""}" data-go="${go}"><b>${n}</b><span>${t}</span></button>`).join("");
+  $$("[data-go]").forEach((b) => (b.onclick = () => loadAdmin(b.dataset.go)));
+
+  $("#dash-alerts").innerHTML = alerts.length ? alerts.map((r) => `
+    <div class="item ${r.crisis_flag ? "flag" : "attn"}">
+      <div class="row between"><b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)})</b>
+        <span>${worryBadge(r.worry_level)}<span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span></div>
+      ${r.crisis_flag ? `<p class="crisis-tag">⚠ 위기 신호가 있습니다. 상담 일정과 관계없이 먼저 연락해 주세요.</p>` : ""}
+      <p>${esc(r.topic)} · ${r.slots ? fmt(r.slots.starts_at) : "시간 미정"}</p>
+      <p class="hint">${esc(r.concern) || "-"}</p>
+    </div>`).join("") : `<p class="hint">지금 주의가 필요한 신청이 없습니다.</p>`;
+
+  $("#dash-week").innerHTML = upcoming.length ? `<table><tbody>${upcoming.map((r) => `
+    <tr><td>${fmt(r.slots.starts_at)}</td><td>${esc(r.profiles?.name)}</td><td>${esc(r.mode)} · ${esc(r.topic)}</td>
+    <td><span class="badge s-${esc(r.status)}">${esc(r.status)}</span></td></tr>`).join("")}</tbody></table>`
+    : `<p class="hint">앞으로 7일 안에 잡힌 상담이 없습니다.</p>`;
+
+  $("#dash-sem").textContent = `(${sem.label}, ${none.length}명)`;
+  $("#dash-none").innerHTML = !students?.length ? `<p class="hint">가입한 학생이 없습니다.</p>`
+    : none.length ? `<div class="chips">${none.map((s) => `<span class="chip">${esc(s.name)} <small>${esc(s.student_no)}</small></span>`).join("")}</div>`
+    : `<p class="hint">모든 학생과 이번 학기 상담을 했습니다.</p>`;
 }
 
 $("#status-filter").onchange = () => loadRequests();
@@ -171,15 +312,16 @@ async function loadRequests() {
   if (error) return (box.textContent = error.message);
   if (!data.length) return (box.innerHTML = `<p class="hint">해당하는 신청이 없습니다.</p>`);
   box.innerHTML = data.map((r) => `
-    <div class="item ${r.crisis_flag ? "flag" : ""}">
+    <div class="item ${r.crisis_flag ? "flag" : (r.worry_level || 0) >= 4 ? "attn" : ""}">
       <div class="row between">
         <b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)})</b>
-        <span class="badge s-${esc(r.status)}">${esc(r.status)}</span>
+        <span>${worryBadge(r.worry_level)}<span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span>
       </div>
-      ${r.crisis_flag ? `<p class="crisis-tag">⚠ 위기 표현이 있습니다. 먼저 연락해 주세요.</p>` : ""}
+      ${r.crisis_flag ? `<p class="crisis-tag">⚠ 위기 신호가 있습니다. 먼저 연락해 주세요.</p>` : ""}
       <p>${r.slots ? fmt(r.slots.starts_at) + ` (${r.slots.duration_min}분)` : "시간 미정"} · ${esc(r.mode)} · ${esc(r.topic)}</p>
       <dl>
         <dt>요즘 고민</dt><dd>${esc(r.concern) || "-"}</dd>
+        <dt>고민 크기</dt><dd>${r.worry_level ?? "-"} / 5</dd>
         <dt>학교생활 만족도</dt><dd>${r.satisfaction ?? "-"} / 5</dd>
         <dt>바라는 점</dt><dd>${esc(r.wish) || "-"}</dd>
       </dl>
@@ -279,14 +421,6 @@ async function loadSlots() {
 }
 
 // 학생별 이력
-function semesterStart() {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth() + 1;
-  if (m >= 9) return { start: `${y}-09-01`, label: `${y}년 2학기` };
-  if (m >= 3) return { start: `${y}-03-01`, label: `${y}년 1학기` };
-  return { start: `${y - 1}-09-01`, label: `${y - 1}년 2학기·겨울방학` };
-}
-
 async function loadStudents() {
   const sem = semesterStart();
   $("#semester-label").textContent = `(${sem.label} 상담 횟수)`;
@@ -309,10 +443,18 @@ async function loadStudents() {
 }
 
 async function showHistory(s) {
-  const { data } = await sb.from("cs_notes").select("*").eq("student_id", s.id).order("counsel_date", { ascending: false });
+  const [{ data }, { data: reqs }] = await Promise.all([
+    sb.from("cs_notes").select("*").eq("student_id", s.id).order("counsel_date", { ascending: false }),
+    sb.from("cs_requests").select("created_at, topic, concern, worry_level, crisis_flag").eq("student_id", s.id).order("created_at", { ascending: false }),
+  ]);
   const box = $("#student-detail");
   show(box);
-  box.innerHTML = `<h2>${esc(s.name)} (${esc(s.student_no)}) 상담 이력</h2>` + (data?.length ? data.map(noteHTML).join("") : `<p class="hint">상담 일지가 없습니다.</p>`);
+  box.innerHTML = `<h2>${esc(s.name)} (${esc(s.student_no)}) 상담 이력</h2>
+    <p class="hint">개인정보 동의: ${s.consent_at ? new Date(s.consent_at).toLocaleDateString("ko-KR") : "아직 안 함"}</p>
+    <h3>상담 일지</h3>` +
+    (data?.length ? data.map(noteHTML).join("") : `<p class="hint">상담 일지가 없습니다.</p>`) +
+    `<h3>사전 질문지 응답</h3>` +
+    (reqs?.length ? reqs.map((r) => `<div class="item ${r.crisis_flag ? "flag" : ""}"><b>${new Date(r.created_at).toLocaleDateString("ko-KR")} · ${esc(r.topic)}</b> ${worryBadge(r.worry_level)}<p>${esc(r.concern) || "-"}</p></div>`).join("") : `<p class="hint">응답이 없습니다.</p>`);
   box.scrollIntoView({ behavior: "smooth" });
 }
 
@@ -326,6 +468,45 @@ const noteHTML = (n) => `
       <dt>후속 조치</dt><dd>${esc(n.followup) || "-"}${n.next_date ? ` (다음 상담 ${fmtDate(n.next_date)})` : ""}</dd>
     </dl>
   </div>`;
+
+// CSV 내보내기
+function downloadCSV(name, rows) {
+  const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+
+$("#export-summary").onclick = async () => {
+  const sem = semesterStart();
+  const [{ data: students }, { data: notes }] = await Promise.all([
+    sb.from("cs_profiles").select("id, name, student_no").eq("role", "student").order("student_no"),
+    sb.from("cs_notes").select("student_id, counsel_date, topic"),
+  ]);
+  const topicOf = (t) => (TOPICS.includes(t) ? t : "기타");
+  const rows = [["학번", "이름", `${sem.label} 상담`, "전체 상담", ...TOPICS.map((t) => `${t}(전체)`)]];
+  (students || []).forEach((s) => {
+    const mine = (notes || []).filter((n) => n.student_id === s.id);
+    rows.push([s.student_no, s.name, mine.filter((n) => n.counsel_date >= sem.start).length, mine.length,
+      ...TOPICS.map((t) => mine.filter((n) => topicOf(n.topic) === t).length)]);
+  });
+  downloadCSV(`상담횟수_${today()}.csv`, rows);
+};
+
+$("#export-notes").onclick = async () => {
+  const withPrivate = $("#export-private").checked;
+  if (withPrivate && !confirm("교수 메모가 포함된 파일입니다. 외부로 보내지 말고 안전하게 보관해 주세요. 내려받을까요?")) return;
+  const { data, error } = await sb.from("cs_notes").select("*, profiles:cs_profiles(name, student_no)").order("counsel_date");
+  if (error) return alert(error.message);
+  const head = ["상담일", "학번", "이름", "분야", "상담 내용", "교수 의견", ...(withPrivate ? ["교수 메모"] : []), "후속 조치", "다음 상담 예정일"];
+  const rows = [head, ...(data || []).map((n) => [n.counsel_date, n.profiles?.student_no, n.profiles?.name, n.topic, n.content, n.opinion,
+    ...(withPrivate ? [n.private_memo] : []), n.followup, n.next_date])];
+  downloadCSV(`상담기록_${today()}.csv`, rows);
+};
 
 // 후속 조치
 async function loadFollowup() {
@@ -347,6 +528,48 @@ async function loadFollowup() {
     loadFollowup();
   }));
 }
+
+// 익명 질문 (교수)
+async function loadQuestions() {
+  const { data, error } = await sb.from("cs_questions").select("*").order("created_at", { ascending: false });
+  const box = $("#question-list");
+  if (error) return (box.textContent = error.message);
+  if (!data.length) return (box.innerHTML = `<p class="hint">아직 들어온 질문이 없습니다.</p>`);
+  box.innerHTML = data.map((q) => `
+    <div class="item ${q.crisis_flag ? "flag" : ""}">
+      <div class="row between"><span class="hint">${new Date(q.created_at).toLocaleString("ko-KR")}</span>
+        <span class="badge ${q.answer ? "s-완료" : "s-대기"}">${q.answer ? "답변함" : "답변 전"}</span></div>
+      ${q.crisis_flag ? `<p class="crisis-tag">⚠ 위기 표현이 있습니다. 익명이라 개인 연락은 어려우니, 답변에 도움 연락처를 꼭 넣어 주세요.</p>` : ""}
+      <p><b>Q.</b> ${esc(q.content)}</p>
+      <textarea rows="3" data-ans="${q.id}" placeholder="답변">${esc(q.answer)}</textarea>
+      <div class="row end">
+        <label class="check"><input type="checkbox" data-pub="${q.id}" ${q.is_public ? "checked" : ""} /> 학생들에게 공개</label>
+        <button class="small primary" data-save="${q.id}">답변 저장</button>
+        <button class="small" data-qdel="${q.id}">삭제</button>
+      </div>
+    </div>`).join("");
+  $$("[data-save]", box).forEach((b) => (b.onclick = async () => {
+    const id = b.dataset.save;
+    const answer = $(`[data-ans="${id}"]`, box).value.trim() || null;
+    const { error } = await sb.from("cs_questions").update({ answer, is_public: $(`[data-pub="${id}"]`, box).checked, answered_at: answer ? new Date().toISOString() : null }).eq("id", id);
+    if (error) alert(error.message);
+    loadQuestions();
+  }));
+  $$("[data-qdel]", box).forEach((b) => (b.onclick = async () => {
+    if (!confirm("이 질문을 삭제할까요?")) return;
+    await sb.from("cs_questions").delete().eq("id", b.dataset.qdel);
+    loadQuestions();
+  }));
+}
+
+// 연락처 설정
+$("#form-settings").onsubmit = async (e) => {
+  e.preventDefault();
+  const value = String(new FormData(e.target).get("center_phone")).trim();
+  const { error } = await sb.from("cs_settings").upsert({ key: "center_phone", value });
+  $("#settings-msg").textContent = error ? error.message : "저장했습니다. 학생 화면 하단과 위기 안내에 표시됩니다.";
+  if (!error) loadSettings();
+};
 
 // 학생 명단
 $("#form-roster").onsubmit = async (e) => {

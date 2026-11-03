@@ -215,3 +215,71 @@ $$;
 
 -- 명단에 반(A/B) 추가
 alter table public.cs_roster add column if not exists class text check (class in ('A','B'));
+
+-- ============================================================
+-- 2026-11-03 업그레이드: 개인정보 동의, 고민 척도, 익명 질문함, 연락처 설정
+-- ============================================================
+alter table public.cs_profiles add column if not exists consent_at timestamptz;
+alter table public.cs_requests add column if not exists worry_level int check (worry_level between 1 and 5);
+
+alter table public.cs_requests drop constraint if exists cs_requests_topic_check;
+alter table public.cs_requests add constraint cs_requests_topic_check check (topic = any (array[
+ '학교생활 적응','학업·성적','진로·국가고시','대인관계','경제·장학','건강·심리','기타',
+ '학업','진로','학교생활']));
+
+create or replace function public.cs_give_consent()
+returns timestamptz language sql security definer set search_path = public as $$
+  update public.cs_profiles set consent_at = now() where id = auth.uid() returning consent_at;
+$$;
+revoke all on function public.cs_give_consent() from public, anon;
+grant execute on function public.cs_give_consent() to authenticated;
+
+-- 고민 척도 5점도 위기 신호로 표시
+create or replace function public.cs_prepare_request()
+returns trigger language plpgsql as $function$
+begin
+  if not public.cs_is_admin() then
+    new.status := '대기';
+    new.public_summary := null;
+  end if;
+  new.crisis_flag := coalesce(new.concern,'') ~ '(죽고\s*싶|자살|자해|사라지고\s*싶|살기\s*싫)'
+                     or coalesce(new.worry_level,0) = 5;
+  return new;
+end;
+$function$;
+
+-- 익명 질문함: 작성자 정보를 저장하지 않는다
+create table if not exists public.cs_questions (
+  id bigint generated always as identity primary key,
+  content text not null check (char_length(content) between 2 and 1000),
+  answer text,
+  is_public boolean not null default true,
+  crisis_flag boolean not null default false,
+  created_at timestamptz not null default now(),
+  answered_at timestamptz
+);
+alter table public.cs_questions enable row level security;
+create policy cs_questions_admin_all on public.cs_questions for all to authenticated
+  using (public.cs_is_admin()) with check (public.cs_is_admin());
+create policy cs_questions_student_insert on public.cs_questions for insert to authenticated
+  with check (exists (select 1 from public.cs_profiles where id = auth.uid()) and answer is null);
+create policy cs_questions_student_select on public.cs_questions for select to authenticated
+  using (answer is not null and is_public and exists (select 1 from public.cs_profiles where id = auth.uid()));
+
+create or replace function public.cs_prepare_question()
+returns trigger language plpgsql as $$
+begin
+  if not public.cs_is_admin() then new.answer := null; new.answered_at := null; new.is_public := true; end if;
+  new.crisis_flag := coalesce(new.content,'') ~ '(죽고\s*싶|자살|자해|사라지고\s*싶|살기\s*싫)';
+  return new;
+end; $$;
+create trigger cs_questions_prepare before insert on public.cs_questions
+  for each row execute function public.cs_prepare_question();
+
+-- 학생 화면 연락처 등 설정값
+create table if not exists public.cs_settings (key text primary key, value text not null);
+alter table public.cs_settings enable row level security;
+create policy cs_settings_read on public.cs_settings for select to authenticated using (true);
+create policy cs_settings_admin_all on public.cs_settings for all to authenticated
+  using (public.cs_is_admin()) with check (public.cs_is_admin());
+insert into public.cs_settings(key, value) values ('center_phone', '') on conflict do nothing;

@@ -45,8 +45,28 @@
     <p id="login-msg" class="msg"></p>
   </section>
 
+  <!-- 개인정보 동의 화면 -->
+  <section id="view-consent" class="card narrow hidden">
+    <h2>개인정보 수집·이용 동의</h2>
+    <p class="hint">상담을 시작하기 전에 아래 내용을 읽어 주세요.</p>
+    <dl class="consent">
+      <dt>수집 항목</dt><dd>학번, 이름, 상담 신청 내용, 사전 질문지 응답, 상담 기록</dd>
+      <dt>이용 목적</dt><dd>지도교수의 학생 지도와 상담</dd>
+      <dt>열람 범위</dt><dd>지도교수만 볼 수 있습니다. 다만 학생의 안전이 걱정되는 위급한 상황에서는 학교 학생상담센터 등 전문 기관과 필요한 범위에서 연계할 수 있습니다.</dd>
+      <dt>보관 기간</dt><dd>졸업 후 1년까지 보관한 뒤 삭제합니다.</dd>
+      <dt>동의 거부</dt><dd>동의하지 않을 수 있습니다. 이 경우 웹앱 대신 교수님 연구실로 직접 찾아와 상담을 받을 수 있습니다.</dd>
+    </dl>
+    <div class="row end">
+      <button id="consent-no" type="button">동의하지 않음</button>
+      <button id="consent-yes" class="primary" type="button">동의합니다</button>
+    </div>
+    <p id="consent-msg" class="msg"></p>
+  </section>
+
   <!-- 학생 화면 -->
   <section id="view-student" class="hidden">
+    <p class="notice">이 웹앱은 지도교수와의 상담을 돕기 위한 것으로, 전문 심리상담을 대신하지 않습니다. 마음이 많이 힘들 때는 아래 연락처로 바로 도움을 요청해 주세요.</p>
+
     <div class="card">
       <h2>상담 신청</h2>
       <form id="form-request">
@@ -58,9 +78,10 @@
           <label>상담 방식
             <select name="mode" required><option>대면</option><option>온라인</option></select>
           </label>
-          <label>상담 주제
+          <label>상담 분야
             <select name="topic" required>
-              <option>학업</option><option>진로</option><option>학교생활</option><option>대인관계</option><option>기타</option>
+              <option>학교생활 적응</option><option>학업·성적</option><option>진로·국가고시</option>
+              <option>대인관계</option><option>경제·장학</option><option>건강·심리</option><option>기타</option>
             </select>
           </label>
         </div>
@@ -68,6 +89,15 @@
         <label>요즘 고민
           <textarea name="concern" id="concern" rows="4" placeholder="편하게 적어 주세요."></textarea>
         </label>
+        <fieldset class="scale" id="worry-scale">
+          <legend>지금 고민은 얼마나 큰가요?</legend>
+          <label><input type="radio" name="worry_level" value="1" required />1</label>
+          <label><input type="radio" name="worry_level" value="2" />2</label>
+          <label><input type="radio" name="worry_level" value="3" />3</label>
+          <label><input type="radio" name="worry_level" value="4" />4</label>
+          <label><input type="radio" name="worry_level" value="5" />5</label>
+          <span class="hint">1 가벼운 편 · 5 혼자 감당하기 어려움</span>
+        </fieldset>
         <div id="crisis-live" class="crisis hidden"></div>
         <fieldset class="scale">
           <legend>학교생활 만족도</legend>
@@ -90,19 +120,49 @@
       <h2>내 상담 내역</h2>
       <div id="my-requests"></div>
     </div>
+
+    <div class="card">
+      <h2>익명 질문함</h2>
+      <p class="hint">이름 없이 질문을 남길 수 있습니다. 교수님도 누가 썼는지 알 수 없습니다. 답변한 질문은 아래 목록에 공개됩니다.</p>
+      <form id="form-question">
+        <textarea name="content" rows="3" maxlength="1000" required placeholder="궁금한 점을 적어 주세요."></textarea>
+        <button class="primary" type="submit">익명으로 보내기</button>
+        <p id="question-msg" class="msg"></p>
+      </form>
+      <div id="public-questions"></div>
+    </div>
   </section>
 
   <!-- 교수 화면 -->
   <section id="view-admin" class="hidden">
     <nav class="tabs wide">
-      <button class="tab active" data-admin="requests">신청 목록</button>
+      <button class="tab active" data-admin="dashboard">대시보드</button>
+      <button class="tab" data-admin="requests">신청 목록</button>
       <button class="tab" data-admin="slots">상담 시간</button>
       <button class="tab" data-admin="students">학생별 이력</button>
       <button class="tab" data-admin="followup">후속 조치</button>
-      <button class="tab" data-admin="roster">학생 명단</button>
+      <button class="tab" data-admin="questions">익명 질문</button>
+      <button class="tab" data-admin="roster">명단·설정</button>
     </nav>
 
-    <div id="admin-requests" class="adminpane">
+    <div id="admin-dashboard" class="adminpane">
+      <div class="stats" id="dash-stats"></div>
+      <div class="card">
+        <h2>주의가 필요한 학생</h2>
+        <p class="hint">위기 표현이 있거나 고민 크기 4점 이상이며 아직 상담을 마치지 않은 신청입니다.</p>
+        <div id="dash-alerts"></div>
+      </div>
+      <div class="card">
+        <h2>앞으로 7일 상담 일정</h2>
+        <div id="dash-week"></div>
+      </div>
+      <div class="card">
+        <h2>이번 학기 아직 상담하지 않은 학생 <span id="dash-sem" class="hint"></span></h2>
+        <div id="dash-none"></div>
+      </div>
+    </div>
+
+    <div id="admin-requests" class="adminpane hidden">
       <div class="card">
         <div class="row between">
           <h2>상담 신청 목록</h2>
@@ -134,13 +194,45 @@
 
     <div id="admin-students" class="adminpane hidden">
       <div class="card">
+        <h2>학기말 보고용 내보내기</h2>
+        <p class="hint">엑셀에서 바로 열 수 있는 CSV 파일로 내려받습니다.</p>
+        <div class="row wrap">
+          <button class="small" id="export-summary">학생별·분야별 상담 횟수</button>
+          <button class="small" id="export-notes">상담 기록 전체</button>
+          <label class="check"><input type="checkbox" id="export-private" /> 교수 메모 포함</label>
+        </div>
+      </div>
+      <div class="card">
         <h2>학생별 상담 이력 <span id="semester-label" class="hint"></span></h2>
         <div id="student-list"></div>
       </div>
       <div class="card hidden" id="student-detail"></div>
     </div>
 
+    <div id="admin-followup" class="adminpane hidden">
+      <div class="card">
+        <h2>후속 조치가 필요한 학생</h2>
+        <div id="followup-list"></div>
+      </div>
+    </div>
+
+    <div id="admin-questions" class="adminpane hidden">
+      <div class="card">
+        <h2>익명 질문</h2>
+        <p class="hint">학생 이름은 저장되지 않습니다. 답변을 저장하면 "공개"로 표시한 질문은 모든 학생에게 보입니다.</p>
+        <div id="question-list"></div>
+      </div>
+    </div>
+
     <div id="admin-roster" class="adminpane hidden">
+      <div class="card">
+        <h2>학생 화면 연락처 설정</h2>
+        <form id="form-settings" class="row wrap">
+          <label>학생상담센터 전화번호<input name="center_phone" placeholder="예: 061-000-0000" /></label>
+          <button class="primary" type="submit">저장</button>
+        </form>
+        <p id="settings-msg" class="msg"></p>
+      </div>
       <div class="card">
         <h2>1학년 학생 명단 등록</h2>
         <p class="hint">한 줄에 한 명씩 "학번 이름"을 적으세요. 엑셀에서 학번·이름 두 칸을 복사해 그대로 붙여 넣어도 됩니다. 이미 있는 학번은 이름만 바뀝니다.</p>
@@ -157,15 +249,16 @@
         <div id="roster-list"></div>
       </div>
     </div>
-
-    <div id="admin-followup" class="adminpane hidden">
-      <div class="card">
-        <h2>후속 조치가 필요한 학생</h2>
-        <div id="followup-list"></div>
-      </div>
-    </div>
   </section>
 </main>
+
+<!-- 도움 연락처 (학생 화면, 로그인 화면에 항상 표시) -->
+<footer id="help-bar" class="help-bar">
+  <b>도움이 필요할 때</b>
+  <span id="help-center">학생상담센터</span>
+  <a href="tel:109">자살예방상담 109</a>
+  <a href="tel:15770199">정신건강위기상담 1577-0199</a>
+</footer>
 
 <!-- 상담 일지 작성 창 -->
 <dialog id="note-dialog">
@@ -174,12 +267,12 @@
     <p id="note-student" class="hint"></p>
     <div class="row">
       <label>상담 날짜<input type="date" name="counsel_date" required /></label>
-      <label>주제<input name="topic" /></label>
+      <label>분야<input name="topic" /></label>
     </div>
     <label>상담 내용<textarea name="content" rows="4"></textarea></label>
     <label>교수 의견<textarea name="opinion" rows="3"></textarea></label>
     <label class="private">교수만 보는 메모 (학생에게 보이지 않음)<textarea name="private_memo" rows="3"></textarea></label>
-    <label class="public">학생에게 공개할 요약<textarea name="public_summary" rows="3"></textarea></label>
+    <label class="public">학생에게 공개할 요약·과제<textarea name="public_summary" rows="3"></textarea></label>
     <label>후속 조치<textarea name="followup" rows="2"></textarea></label>
     <div class="row">
       <label class="check"><input type="checkbox" name="needs_followup" /> 후속 조치 필요</label>
