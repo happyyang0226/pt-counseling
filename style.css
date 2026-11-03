@@ -90,7 +90,9 @@ label.private textarea, dd.private { background: #fff8f0; }
 label.private { color: #8a5a00; }
 label.public { color: var(--main); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); word-break: keep-all; }
+.badge { white-space: nowrap; }
+#form-settings > label { flex: 1 1 220px; margin: 0; }
 th { color: var(--muted); font-weight: 600; }
 dialog { border: 0; border-radius: var(--radius); padding: 20px; width: min(640px, 94vw); max-height: 92vh; }
 dialog::backdrop { background: rgba(0, 0, 0, .35); }
@@ -105,6 +107,16 @@ dialog::backdrop { background: rgba(0, 0, 0, .35); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { background: #eef1f0; border-radius: 999px; padding: 4px 12px; font-size: 14px; }
 .chip small { color: var(--muted); }
+
+/* 반(A/B) 구분 */
+.classbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: #fff; }
+.seg button { border: 0; border-radius: 0; padding: 6px 14px; font-size: 14px; background: none; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.active { background: var(--main); color: #fff; font-weight: 600; }
+.badge.cls-A { background: #e4eefc; color: #1f4f9a; font-weight: 600; }
+.badge.cls-B { background: #f6e6f4; color: #8a2f7c; font-weight: 600; }
+select.cls-select { width: auto; margin: 0; padding: 4px 8px; font-size: 14px; }
 
 /* 도움 연락처 고정 바 */
 .help-bar {

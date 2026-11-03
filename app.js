@@ -238,9 +238,28 @@ async function loadPublicQuestions() {
 // ---------- 교수 화면 ----------
 $$("#view-admin .tab").forEach((b) => (b.onclick = () => loadAdmin(b.dataset.admin)));
 
-function loadAdmin(pane) {
+// 반(A/B) 구분: 명단(cs_roster)의 class 값을 학번으로 찾아 쓴다
+let classFilter = "";
+let CMAP = {};
+let curPane = "dashboard";
+const CLASS_NAME = { A: "A반", B: "B반" };
+const inClass = (no) => !classFilter || CMAP[no] === classFilter;
+const classTag = (no) => (CMAP[no] ? `<span class="badge cls-${CMAP[no]}">${CLASS_NAME[CMAP[no]]}</span>` : "");
+async function refreshClassMap() {
+  const { data } = await sb.from("cs_roster").select("student_no, class");
+  CMAP = Object.fromEntries((data || []).map((r) => [r.student_no, r.class]));
+}
+$$("#class-filter button").forEach((b) => (b.onclick = () => {
+  classFilter = b.dataset.class;
+  $$("#class-filter button").forEach((x) => x.classList.toggle("active", x === b));
+  loadAdmin(curPane);
+}));
+
+async function loadAdmin(pane) {
+  curPane = pane;
   $$("#view-admin .tab").forEach((x) => x.classList.toggle("active", x.dataset.admin === pane));
   $$(".adminpane").forEach((p) => show(p, p.id === `admin-${pane}`));
+  await refreshClassMap();
   ({ dashboard: loadDashboard, requests: loadRequests, slots: loadSlots, students: loadStudents, followup: loadFollowup, questions: loadQuestions, roster: loadRoster })[pane]();
 }
 
@@ -264,13 +283,14 @@ async function loadDashboard() {
     sb.from("cs_notes").select("student_id, counsel_date").gte("counsel_date", sem.start),
     sb.from("cs_questions").select("id", { count: "exact", head: true }).is("answer", null),
   ]);
-  const open = reqs || [];
+  const open = (reqs || []).filter((r) => inClass(r.profiles?.student_no));
+  const studentsIn = (students || []).filter((s) => inClass(s.student_no));
   const alerts = open.filter((r) => r.crisis_flag || (r.worry_level || 0) >= 4)
     .sort((a, b) => (b.crisis_flag - a.crisis_flag) || ((b.worry_level || 0) - (a.worry_level || 0)));
   const upcoming = open.filter((r) => r.slots && new Date(r.slots.starts_at) >= now && new Date(r.slots.starts_at) <= week)
     .sort((a, b) => new Date(a.slots.starts_at) - new Date(b.slots.starts_at));
   const met = new Set((notes || []).map((n) => n.student_id));
-  const none = (students || []).filter((s) => !met.has(s.id));
+  const none = studentsIn.filter((s) => !met.has(s.id));
   const pending = open.filter((r) => r.status === "대기").length;
 
   $("#dash-stats").innerHTML = [
@@ -283,7 +303,7 @@ async function loadDashboard() {
 
   $("#dash-alerts").innerHTML = alerts.length ? alerts.map((r) => `
     <div class="item ${r.crisis_flag ? "flag" : "attn"}">
-      <div class="row between"><b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)})</b>
+      <div class="row between"><b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)}) ${classTag(r.profiles?.student_no)}</b>
         <span>${worryBadge(r.worry_level)}<span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span></div>
       ${r.crisis_flag ? `<p class="crisis-tag">⚠ 위기 신호가 있습니다. 상담 일정과 관계없이 먼저 연락해 주세요.</p>` : ""}
       <p>${esc(r.topic)} · ${r.slots ? fmt(r.slots.starts_at) : "시간 미정"}</p>
@@ -291,13 +311,13 @@ async function loadDashboard() {
     </div>`).join("") : `<p class="hint">지금 주의가 필요한 신청이 없습니다.</p>`;
 
   $("#dash-week").innerHTML = upcoming.length ? `<table><tbody>${upcoming.map((r) => `
-    <tr><td>${fmt(r.slots.starts_at)}</td><td>${esc(r.profiles?.name)}</td><td>${esc(r.mode)} · ${esc(r.topic)}</td>
+    <tr><td>${fmt(r.slots.starts_at)}</td><td>${esc(r.profiles?.name)} ${classTag(r.profiles?.student_no)}</td><td>${esc(r.mode)} · ${esc(r.topic)}</td>
     <td><span class="badge s-${esc(r.status)}">${esc(r.status)}</span></td></tr>`).join("")}</tbody></table>`
     : `<p class="hint">앞으로 7일 안에 잡힌 상담이 없습니다.</p>`;
 
   $("#dash-sem").textContent = `(${sem.label}, ${none.length}명)`;
-  $("#dash-none").innerHTML = !students?.length ? `<p class="hint">가입한 학생이 없습니다.</p>`
-    : none.length ? `<div class="chips">${none.map((s) => `<span class="chip">${esc(s.name)} <small>${esc(s.student_no)}</small></span>`).join("")}</div>`
+  $("#dash-none").innerHTML = !studentsIn.length ? `<p class="hint">가입한 학생이 없습니다.</p>`
+    : none.length ? `<div class="chips">${none.map((s) => `<span class="chip">${esc(s.name)} <small>${esc(s.student_no)} ${CMAP[s.student_no] ? CLASS_NAME[CMAP[s.student_no]] : ""}</small></span>`).join("")}</div>`
     : `<p class="hint">모든 학생과 이번 학기 상담을 했습니다.</p>`;
 }
 
@@ -307,14 +327,15 @@ async function loadRequests() {
   const status = $("#status-filter").value;
   let q = sb.from("cs_requests").select("*, profiles:cs_profiles(name, student_no), slots:cs_slots(starts_at, duration_min)").order("created_at", { ascending: false });
   if (status) q = q.eq("status", status);
-  const { data, error } = await q;
+  const { data: all, error } = await q;
   const box = $("#request-list");
   if (error) return (box.textContent = error.message);
+  const data = all.filter((r) => inClass(r.profiles?.student_no));
   if (!data.length) return (box.innerHTML = `<p class="hint">해당하는 신청이 없습니다.</p>`);
   box.innerHTML = data.map((r) => `
     <div class="item ${r.crisis_flag ? "flag" : (r.worry_level || 0) >= 4 ? "attn" : ""}">
       <div class="row between">
-        <b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)})</b>
+        <b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)}) ${classTag(r.profiles?.student_no)}</b>
         <span>${worryBadge(r.worry_level)}<span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span>
       </div>
       ${r.crisis_flag ? `<p class="crisis-tag">⚠ 위기 신호가 있습니다. 먼저 연락해 주세요.</p>` : ""}
@@ -424,10 +445,12 @@ async function loadSlots() {
 async function loadStudents() {
   const sem = semesterStart();
   $("#semester-label").textContent = `(${sem.label} 상담 횟수)`;
-  const [{ data: students }, { data: notes }] = await Promise.all([
+  const [{ data: allStudents }, { data: notes }] = await Promise.all([
     sb.from("cs_profiles").select("*").eq("role", "student").order("student_no"),
     sb.from("cs_notes").select("student_id, counsel_date"),
   ]);
+  const students = (allStudents || []).filter((s) => inClass(s.student_no))
+    .sort((a, b) => (CMAP[a.student_no] || "Z").localeCompare(CMAP[b.student_no] || "Z") || a.student_no.localeCompare(b.student_no));
   const count = {}, total = {};
   (notes || []).forEach((n) => {
     total[n.student_id] = (total[n.student_id] || 0) + 1;
@@ -435,8 +458,8 @@ async function loadStudents() {
   });
   const box = $("#student-list");
   if (!students?.length) return (box.innerHTML = `<p class="hint">가입한 학생이 없습니다.</p>`);
-  box.innerHTML = `<table><thead><tr><th>학번</th><th>이름</th><th>이번 학기</th><th>전체</th><th></th></tr></thead><tbody>
-    ${students.map((s) => `<tr><td>${esc(s.student_no)}</td><td>${esc(s.name)}</td><td>${count[s.id] || 0}회</td><td>${total[s.id] || 0}회</td>
+  box.innerHTML = `<table><thead><tr><th>반</th><th>학번</th><th>이름</th><th>이번 학기</th><th>전체</th><th></th></tr></thead><tbody>
+    ${students.map((s) => `<tr><td>${classTag(s.student_no)}</td><td>${esc(s.student_no)}</td><td>${esc(s.name)}</td><td>${count[s.id] || 0}회</td><td>${total[s.id] || 0}회</td>
       <td><button class="small" data-hist="${s.id}">보기</button></td></tr>`).join("")}
   </tbody></table>`;
   $$("[data-hist]", box).forEach((b) => (b.onclick = () => showHistory(students.find((s) => s.id === b.dataset.hist))));
@@ -449,7 +472,7 @@ async function showHistory(s) {
   ]);
   const box = $("#student-detail");
   show(box);
-  box.innerHTML = `<h2>${esc(s.name)} (${esc(s.student_no)}) 상담 이력</h2>
+  box.innerHTML = `<h2>${esc(s.name)} (${esc(s.student_no)}) ${classTag(s.student_no)} 상담 이력</h2>
     <p class="hint">개인정보 동의: ${s.consent_at ? new Date(s.consent_at).toLocaleDateString("ko-KR") : "아직 안 함"}</p>
     <h3>상담 일지</h3>` +
     (data?.length ? data.map(noteHTML).join("") : `<p class="hint">상담 일지가 없습니다.</p>`) +
@@ -488,13 +511,13 @@ $("#export-summary").onclick = async () => {
     sb.from("cs_notes").select("student_id, counsel_date, topic"),
   ]);
   const topicOf = (t) => (TOPICS.includes(t) ? t : "기타");
-  const rows = [["학번", "이름", `${sem.label} 상담`, "전체 상담", ...TOPICS.map((t) => `${t}(전체)`)]];
-  (students || []).forEach((s) => {
+  const rows = [["반", "학번", "이름", `${sem.label} 상담`, "전체 상담", ...TOPICS.map((t) => `${t}(전체)`)]];
+  (students || []).filter((s) => inClass(s.student_no)).forEach((s) => {
     const mine = (notes || []).filter((n) => n.student_id === s.id);
-    rows.push([s.student_no, s.name, mine.filter((n) => n.counsel_date >= sem.start).length, mine.length,
+    rows.push([CLASS_NAME[CMAP[s.student_no]] || "", s.student_no, s.name, mine.filter((n) => n.counsel_date >= sem.start).length, mine.length,
       ...TOPICS.map((t) => mine.filter((n) => topicOf(n.topic) === t).length)]);
   });
-  downloadCSV(`상담횟수_${today()}.csv`, rows);
+  downloadCSV(`상담횟수_${classFilter ? CLASS_NAME[classFilter] + "_" : ""}${today()}.csv`, rows);
 };
 
 $("#export-notes").onclick = async () => {
@@ -502,22 +525,24 @@ $("#export-notes").onclick = async () => {
   if (withPrivate && !confirm("교수 메모가 포함된 파일입니다. 외부로 보내지 말고 안전하게 보관해 주세요. 내려받을까요?")) return;
   const { data, error } = await sb.from("cs_notes").select("*, profiles:cs_profiles(name, student_no)").order("counsel_date");
   if (error) return alert(error.message);
-  const head = ["상담일", "학번", "이름", "분야", "상담 내용", "교수 의견", ...(withPrivate ? ["교수 메모"] : []), "후속 조치", "다음 상담 예정일"];
-  const rows = [head, ...(data || []).map((n) => [n.counsel_date, n.profiles?.student_no, n.profiles?.name, n.topic, n.content, n.opinion,
+  const head = ["상담일", "반", "학번", "이름", "분야", "상담 내용", "교수 의견", ...(withPrivate ? ["교수 메모"] : []), "후속 조치", "다음 상담 예정일"];
+  const rows = [head, ...(data || []).filter((n) => inClass(n.profiles?.student_no)).map((n) => [n.counsel_date,
+    CLASS_NAME[CMAP[n.profiles?.student_no]] || "", n.profiles?.student_no, n.profiles?.name, n.topic, n.content, n.opinion,
     ...(withPrivate ? [n.private_memo] : []), n.followup, n.next_date])];
-  downloadCSV(`상담기록_${today()}.csv`, rows);
+  downloadCSV(`상담기록_${classFilter ? CLASS_NAME[classFilter] + "_" : ""}${today()}.csv`, rows);
 };
 
 // 후속 조치
 async function loadFollowup() {
-  const { data, error } = await sb.from("cs_notes").select("*, profiles:cs_profiles(name, student_no)").eq("needs_followup", true).order("next_date", { ascending: true, nullsFirst: false });
+  const { data: all, error } = await sb.from("cs_notes").select("*, profiles:cs_profiles(name, student_no)").eq("needs_followup", true).order("next_date", { ascending: true, nullsFirst: false });
   const box = $("#followup-list");
   if (error) return (box.textContent = error.message);
+  const data = all.filter((n) => inClass(n.profiles?.student_no));
   if (!data.length) return (box.innerHTML = `<p class="hint">후속 조치가 필요한 학생이 없습니다.</p>`);
   box.innerHTML = data.map((n) => `
     <div class="item">
       <div class="row between">
-        <b>${esc(n.profiles?.name)} (${esc(n.profiles?.student_no)})</b>
+        <b>${esc(n.profiles?.name)} (${esc(n.profiles?.student_no)}) ${classTag(n.profiles?.student_no)}</b>
         <span>${n.next_date ? "다음 상담 " + fmtDate(n.next_date) : "날짜 미정"}</span>
       </div>
       <p>${esc(n.followup) || "-"}</p>
@@ -574,18 +599,21 @@ $("#form-settings").onsubmit = async (e) => {
 // 학생 명단
 $("#form-roster").onsubmit = async (e) => {
   e.preventDefault();
+  const fd = new FormData(e.target);
+  const defClass = fd.get("class");
   const rows = [], bad = [];
-  String(new FormData(e.target).get("list")).split(/\r?\n/).forEach((line) => {
+  String(fd.get("list")).split(/\r?\n/).forEach((line) => {
     const t = line.trim();
     if (!t) return;
-    const m = t.match(/^(\d{4,12})[\s,\t]+(.+)$/);
-    if (m) rows.push({ student_no: m[1], name: m[2].replace(/[\s,\t]+/g, " ").trim() });
+    const m = t.match(/^(?:\d{1,3}[\s,\t]+)?(\d{6,12})[\s,\t]+(.+?)(?:[\s,\t]+([AaBb])(?:반)?)?$/);
+    if (m) rows.push({ student_no: m[1], name: m[2].replace(/[\s,\t]+/g, " ").trim(), class: (m[3] || defClass).toUpperCase() });
     else bad.push(t);
   });
   if (!rows.length) return ($("#roster-msg").textContent = "추가할 줄이 없습니다. \"학번 이름\" 형식으로 적어 주세요.");
   const { error } = await sb.from("cs_roster").upsert(rows, { onConflict: "student_no" });
+  const nA = rows.filter((r) => r.class === "A").length;
   $("#roster-msg").textContent = error ? error.message
-    : `${rows.length}명을 명단에 넣었습니다.` + (bad.length ? ` 형식이 맞지 않아 뺀 줄: ${bad.join(" / ")}` : "");
+    : `${rows.length}명을 명단에 넣었습니다 (A반 ${nA}명, B반 ${rows.length - nA}명).` + (bad.length ? ` 형식이 맞지 않아 뺀 줄: ${bad.join(" / ")}` : "");
   if (!error) e.target.reset();
   loadRoster();
 };
@@ -598,14 +626,28 @@ async function loadRoster() {
   const box = $("#roster-list");
   if (error) return (box.textContent = error.message);
   const joined = new Set((profs || []).map((p) => p.student_no));
-  const nJoined = roster.filter((r) => joined.has(r.student_no)).length;
-  $("#roster-count").textContent = `(${roster.length}명 중 ${nJoined}명 가입)`;
-  if (!roster.length) return (box.innerHTML = `<p class="hint">아직 등록된 학생이 없습니다.</p>`);
-  box.innerHTML = `<table><thead><tr><th>학번</th><th>이름</th><th>가입</th><th></th></tr></thead><tbody>
-    ${roster.map((r) => `<tr><td>${esc(r.student_no)}</td><td>${esc(r.name)}</td>
+  const list = roster.filter((r) => !classFilter || r.class === classFilter)
+    .sort((a, b) => (a.class || "Z").localeCompare(b.class || "Z") || a.student_no.localeCompare(b.student_no));
+  const cnt = (c) => roster.filter((r) => r.class === c).length;
+  const nJoined = list.filter((r) => joined.has(r.student_no)).length;
+  $("#roster-count").textContent = `(A반 ${cnt("A")}명 · B반 ${cnt("B")}명${roster.some((r) => !r.class) ? ` · 반 미지정 ${roster.filter((r) => !r.class).length}명` : ""} / 보이는 ${list.length}명 중 ${nJoined}명 가입)`;
+  if (!list.length) return (box.innerHTML = `<p class="hint">아직 등록된 학생이 없습니다.</p>`);
+  box.innerHTML = `<table><thead><tr><th>반</th><th>학번</th><th>이름</th><th>가입</th><th></th></tr></thead><tbody>
+    ${list.map((r) => `<tr>
+      <td><select class="cls-select" data-rcls="${esc(r.student_no)}">
+        <option value="" ${r.class ? "" : "selected"}>-</option>
+        <option value="A" ${r.class === "A" ? "selected" : ""}>A반</option>
+        <option value="B" ${r.class === "B" ? "selected" : ""}>B반</option></select></td>
+      <td>${esc(r.student_no)}</td><td>${esc(r.name)}</td>
       <td>${joined.has(r.student_no) ? `<span class="badge s-확정">가입함</span>` : `<span class="badge">미가입</span>`}</td>
       <td>${joined.has(r.student_no) ? "" : `<button class="small" data-rdel="${esc(r.student_no)}">삭제</button>`}</td></tr>`).join("")}
   </tbody></table>`;
+  $$("[data-rcls]", box).forEach((s) => (s.onchange = async () => {
+    const { error } = await sb.from("cs_roster").update({ class: s.value || null }).eq("student_no", s.dataset.rcls);
+    $("#roster-msg").textContent = error ? error.message : `${s.dataset.rcls} 학생을 ${s.value ? CLASS_NAME[s.value] : "반 미지정"}으로 바꿨습니다.`;
+    await refreshClassMap();
+    loadRoster();
+  }));
   $$("[data-rdel]", box).forEach((b) => (b.onclick = async () => {
     if (!confirm(`${b.dataset.rdel} 학생을 명단에서 뺄까요?`)) return;
     await sb.from("cs_roster").delete().eq("student_no", b.dataset.rdel);

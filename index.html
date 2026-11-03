@@ -135,6 +135,14 @@
 
   <!-- 교수 화면 -->
   <section id="view-admin" class="hidden">
+    <div class="classbar">
+      <span>반 보기</span>
+      <div class="seg" id="class-filter">
+        <button class="active" data-class="">전체</button>
+        <button data-class="A">A반 (1반)</button>
+        <button data-class="B">B반 (2반)</button>
+      </div>
+    </div>
     <nav class="tabs wide">
       <button class="tab active" data-admin="dashboard">대시보드</button>
       <button class="tab" data-admin="requests">신청 목록</button>
@@ -235,9 +243,12 @@
       </div>
       <div class="card">
         <h2>1학년 학생 명단 등록</h2>
-        <p class="hint">한 줄에 한 명씩 "학번 이름"을 적으세요. 엑셀에서 학번·이름 두 칸을 복사해 그대로 붙여 넣어도 됩니다. 이미 있는 학번은 이름만 바뀝니다.</p>
+        <p class="hint">한 줄에 한 명씩 "학번 이름"을 적으세요. 엑셀에서 학번·이름 두 칸을 복사해 그대로 붙여 넣어도 됩니다. 이미 있는 학번은 이름과 반이 바뀝니다. 줄 끝에 A 또는 B를 적으면 그 줄은 적은 반으로 들어갑니다.</p>
         <form id="form-roster">
-          <textarea name="list" rows="8" placeholder="20260001 김물리&#10;20260002 이치료"></textarea>
+          <label>넣을 반
+            <select name="class"><option value="A">A반 (1반)</option><option value="B">B반 (2반)</option></select>
+          </label>
+          <textarea name="list" rows="8" placeholder="2612101 김가인&#10;2612102 김광은&#10;2612201 강민창 B"></textarea>
           <button class="primary" type="submit">명단에 추가</button>
         </form>
         <p id="roster-msg" class="msg"></p>
