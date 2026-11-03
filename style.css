@@ -340,3 +340,24 @@ dl.answers dd, .sum-row dd { white-space: normal; }
   body.landing #intro-top .eyebrow { display: none; }
   body.landing .area-ex { display: none; }
 }
+
+/* ===== 첫 화면 분야 카드(누르면 로그인으로 안내) ===== */
+.area-btn { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; border: 2px solid var(--line); transition: border-color .15s, box-shadow .15s, transform .15s; }
+.area-btn:hover { border-color: var(--main); box-shadow: 0 2px 10px rgba(31, 122, 99, .12); transform: translateY(-1px); }
+.area-btn:focus-visible { outline: 3px solid #8cc7b4; outline-offset: 2px; }
+.area-btn.on { border-color: var(--main); background: var(--main-soft); }
+.area-btn .area-head { display: flex; }
+.area-go { margin-left: auto; color: var(--main); font-weight: 700; opacity: .5; }
+.area-btn:hover .area-go, .area-btn.on .area-go { opacity: 1; }
+.area-btn.on .area-go::before { content: "✓ "; }
+.area .area-p { display: block; margin: 0; font-size: 14px; color: #3d4a46; }
+body.landing .area .area-p { font-size: 13px; line-height: 1.45; }
+.pending-note { display: flex; align-items: center; gap: 10px; background: var(--main-soft); border: 2px solid var(--main); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; }
+.pending-note .pn-icon { font-size: 24px; }
+.pending-note .link-btn { margin-left: auto; white-space: nowrap; }
+.badge.entry { background: #e6ecff; color: #2c4aa8; }
+#preview-slot .wizard { border: 2px dashed #b7c8c2; margin-top: 8px; }
+#area-list-preview { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); margin-bottom: 8px; }
+#area-list-preview .area-ex { display: none; }
+.preview-result { text-align: left; margin: 14px 0; }
+.pending-note[hidden], #wizard[hidden] { display: none; }

@@ -33,11 +33,59 @@ const CENTER_AREAS = [
   ["성격", "소심함이나 수줍음 때문에 생활이 불편하거나, 내 성격이 마음에 들지 않아 더 성숙해지고 싶을 때"],
   ["성 상담", "성에 관한 궁금증이나 정체감의 혼란이 있을 때, 성폭력·성희롱으로 어려움을 겪을 때 (피해가 있었다면 학생상담센터나 전문 기관에 바로 도움을 요청하세요)"],
 ];
+const areaCardHTML = (a) => `<button type="button" class="area area-btn" data-pick="${a.id}" aria-pressed="false">
+    <span class="area-head"><span class="area-icon" aria-hidden="true">${a.icon}</span><b>${esc(a.label)}</b><span class="area-go" aria-hidden="true">→</span></span>
+    <span class="area-p">${esc(a.hint)}</span>
+    <span class="area-p area-ex">${itemsOf("concern", a.id).slice(0, 3).map((c) => `"${esc(c.label)}"`).join(" ")}</span></button>`;
 function renderAreas() {
-  $("#area-list-intro").innerHTML = itemsOf("area").map((a) => `<div class="area"><div class="area-head"><span class="area-icon" aria-hidden="true">${a.icon}</span><b>${esc(a.label)}</b></div>
-    <p>${esc(a.hint)}</p><p class="area-ex">${itemsOf("concern", a.id).slice(0, 3).map((c) => `"${esc(c.label)}"`).join(" ")}</p></div>`).join("");
+  $("#area-list-intro").innerHTML = itemsOf("area").map(areaCardHTML).join("");
+  $("#area-list-preview").innerHTML = itemsOf("area").map(areaCardHTML).join("");
+  $$("#area-list-intro [data-pick]").forEach((b) => (b.onclick = () => pickLanding(b.dataset.pick)));
+  $$("#area-list-preview [data-pick]").forEach((b) => (b.onclick = () => previewStart(b.dataset.pick)));
   $("#area-list-center").innerHTML = CENTER_AREAS.map(([t, d]) => `<div class="area center"><div class="area-head"><b>${t}</b></div><p>${d}</p></div>`).join("");
 }
+// 로그인 전 첫 화면에서 누른 분야 (메모리에만 둔다)
+let PENDING_AREA = null;
+function markCards(listSel, id) {
+  $$(`${listSel} [data-pick]`).forEach((b) => { const on = b.dataset.pick === id; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+}
+function pickLanding(id) {
+  PENDING_AREA = id;
+  markCards("#area-list-intro", id);
+  const a = areaItem(id);
+  const note = $("#pending-note");
+  note.hidden = false;
+  note.innerHTML = `<span class="pn-icon" aria-hidden="true">${a.icon}</span>
+    <span><b>선택한 분야: ${esc(a.label)}</b><br />로그인하면 바로 "고민 고르기"로 이어져요. 처음이면 "학생 가입"을 먼저 해 주세요.</span>
+    <button type="button" class="link-btn" id="pending-clear">선택 취소</button>`;
+  $("#pending-clear").onclick = () => { PENDING_AREA = null; note.hidden = true; markCards("#area-list-intro", null); };
+  // 학생 로그인 탭으로 안내
+  const tab = $('#view-login .tab[data-tab="admin-login"].active') ? $('#view-login .tab[data-tab="student-login"]') : null;
+  if (tab) tab.click();
+  $("#view-login").scrollIntoView({ behavior: "smooth", block: "center" });
+  const visibleForm = $$("#view-login .tabpane").find((f) => !f.classList.contains("hidden"));
+  visibleForm?.querySelector("input")?.focus({ preventScroll: true });
+}
+
+// 학생 화면 시작: 첫 화면에서 고른 분야가 있으면 2단계(고민 고르기)부터
+async function startStudent() {
+  let fromLanding = false;
+  if (PENDING_AREA) {
+    W = newWizard();
+    W.area = PENDING_AREA;
+    W.entry = PENDING_AREA;
+    W.step = 2;
+    PENDING_AREA = null;
+    fromLanding = true;
+  }
+  await loadStudent();
+  if (fromLanding) {
+    $("#wizard").scrollIntoView({ behavior: "smooth", block: "start" });
+    $(".wz-title")?.focus({ preventScroll: true });
+    toast(`첫 화면에서 고른 "${LBL[W.area]}" 분야로 이어서 신청해요.`);
+  }
+}
+
 const IDLE_MIN = 20;
 
 let me = null; // cs_profiles 행
@@ -89,6 +137,7 @@ async function boot() {
   show($("#intro-top"), false);
   show($("#intro-areas"), false);
   if (me.role === "admin") {
+    PENDING_AREA = null;
     show($("#help-bar"), false);
     show($("#view-admin"));
     loadAdmin("dashboard");
@@ -96,7 +145,7 @@ async function boot() {
     show($("#view-consent"));
   } else {
     show($("#view-student"));
-    loadStudent();
+    startStudent();
   }
 }
 
@@ -123,7 +172,7 @@ $("#consent-yes").onclick = async () => {
   me.consent_at = new Date().toISOString();
   show($("#view-consent"), false);
   show($("#view-student"));
-  loadStudent();
+  startStudent();
 };
 $("#consent-no").onclick = async () => {
   if (!confirm("동의하지 않으면 웹앱을 사용할 수 없습니다. 로그아웃할까요?\n교수님 연구실로 직접 찾아와 상담을 받을 수 있습니다.")) return;
@@ -242,7 +291,7 @@ function toast(text) {
 const WZ_STEPS = ["상담분야", "고민 고르기", "상담 준비하기", "방식·시간", "신청 내용 확인"];
 const newWizard = () => ({
   step: 1, area: null, concerns: [], otherText: "", moreOpen: false, moreTab: null, areaNote: null,
-  first: null, since: null, impact: null, help: [], mode: null, slot: null, extra: "",
+  first: null, since: null, impact: null, help: [], mode: null, slot: null, extra: "", entry: null,
   token: crypto.randomUUID(), submitting: false, done: null,
 });
 let W = newWizard();
@@ -344,6 +393,7 @@ function step2() {
   const otherCount = realConcerns().filter((c) => areaOf(c) !== W.area).length;
   if (otherCount) W.moreOpen = true;
   return `<h3 class="wz-title" tabindex="-1">고민 고르기</h3>` +
+    (W.entry && W.entry === W.area ? `<p class="note-box">첫 화면에서 고른 <b>${esc(a.label)}</b> 분야로 시작했어요. 다른 분야로 바꾸려면 "이전"을 누르세요.</p>` : "") +
     groupHTML({ legend: "어떤 고민이 있으신가요? 해당하는 것을 골라 주세요.", multi: true, name: "concern", gid: "q-concern",
       items: concernItems(W.area), selected: W.concerns,
       extra: `<p class="q-area"><span aria-hidden="true">${a.icon}</span> ${esc(a.label)}</p>` }) +
@@ -457,7 +507,9 @@ function stepDone() {
     <p>${d.slot ? `희망 시간 <b>${esc(d.slot)}</b>은 아직 <b>확정 전</b>이에요. 교수님이 확인하면 "내 상담 내역"에서 "확정"으로 바뀌어요.`
       : "교수님이 상담 시간을 정해 연락드릴게요."}</p>
     <p class="hint">${esc(d.area)} · ${esc(d.mode)}</p>
-    <button type="button" class="primary" id="wz-new">다른 상담 신청하기</button>
+    ${d.preview ? `<div class="preview-result"><p class="note-box"><b>미리보기라 저장하지 않았어요.</b> 실제 신청이면 교수 화면 "신청 목록"에 아래처럼 보여요.</p>
+      ${answerSummaryHTML(d.preview)}</div>` : ""}
+    <button type="button" class="primary" id="wz-new">${d.preview ? "미리보기 처음부터 다시" : "다른 상담 신청하기"}</button>
   </div>`;
 }
 
@@ -492,7 +544,7 @@ function bindWizard() {
   const extra = $("#wz-extra");
   if (extra) extra.oninput = () => { W.extra = extra.value; $("#wz-help").hidden = !CRISIS_RE.test(W.extra); };
   $$("[data-goto]", body).forEach((b) => (b.onclick = () => { W.step = Number(b.dataset.goto); renderWizard(); }));
-  $("#wz-new")?.addEventListener("click", () => { W = newWizard(); renderWizard(); });
+  $("#wz-new")?.addEventListener("click", () => { if (PREVIEW) return previewReset(); W = newWizard(); renderWizard(); });
 }
 function selectTab(id) {
   W.moreTab = id;
@@ -535,6 +587,32 @@ function onPick(inp) {
   else if (name === "slot") W.slot = value;
   $("#wz-msg").textContent = "";
 }
+
+// ---------- 교수: 학생 화면 미리보기 (저장 안 함) ----------
+let PREVIEW = false;
+async function loadPreview() {
+  PREVIEW = true;
+  const slot = $("#preview-slot");
+  if (!slot.contains($("#wizard"))) { slot.innerHTML = ""; slot.appendChild($("#wizard")); }
+  MYINFO = { name: "미리보기 학생", student_no: "0000000", class: null };
+  const { data } = await sb.rpc("cs_available_slots");
+  SLOTS = data || [];
+  if (!W.area && W.step === 1) previewReset(false);
+}
+function previewReset(scroll = true) {
+  W = newWizard();
+  $("#wizard").hidden = true;
+  markCards("#area-list-preview", null);
+  if (scroll) $("#admin-preview").scrollIntoView({ behavior: "smooth" });
+}
+function previewStart(area) {
+  W = newWizard();
+  if (area) { W.area = area; W.entry = area; W.step = 2; }
+  markCards("#area-list-preview", area);
+  $("#wizard").hidden = false;
+  renderWizard();
+}
+$("#preview-skip").onclick = () => previewStart(null);
 
 // 단계별 확인 (빠진 답이 있으면 그 질문으로 안내)
 function wzCheck() {
@@ -586,8 +664,16 @@ async function submitWizard() {
     mode_id: W.mode,
     slot_id: W.slot === "later" ? null : Number(W.slot),
     concern: W.extra.trim() || null,
+    entry_area_id: W.entry, // 첫 화면에서 누른 분야 카드 (교수 확인용)
     mode: "대면", topic: "잘 모르겠어요", // 서버가 선택한 ID에 맞게 다시 채운다
   };
+  if (PREVIEW) { // 교수 미리보기: 저장하지 않고 교수 화면에 보일 모습을 보여 준다
+    W.submitting = false;
+    W.done = { slot: W.slot === "later" ? "" : slotLabel(W.slot), area: LBL[W.area], mode: LBL[W.mode], preview: { ...row, mode: LBL[W.mode] } };
+    W.step = WZ_STEPS.length + 1;
+    renderWizard();
+    return;
+  }
   const { error } = await sb.from("cs_requests").insert(row);
   W.submitting = false;
   if (error && !/client_token/.test(error.message)) {
@@ -688,7 +774,7 @@ async function loadAdmin(pane) {
   if ($("#area-filter").options.length < 2) {
     $("#area-filter").insertAdjacentHTML("beforeend", itemsOf("area").map((a) => `<option value="${a.id}">${esc(a.label)}</option>`).join(""));
   }
-  ({ dashboard: loadDashboard, requests: loadRequests, slots: loadSlots, students: loadStudents, followup: loadFollowup, questions: loadQuestions, roster: loadRoster })[pane]();
+  ({ dashboard: loadDashboard, requests: loadRequests, slots: loadSlots, students: loadStudents, followup: loadFollowup, questions: loadQuestions, roster: loadRoster, preview: loadPreview })[pane]();
 }
 
 function semesterStart() {
@@ -710,6 +796,7 @@ function answerSummaryHTML(r) {
   const groups = areas.map((a) => [a, real.filter((c) => areaOf(c) === a)]).filter(([, l]) => l.length);
   const first = r.first_concern_id;
   return `<dl class="answers">
+    <dt>시작한 곳</dt><dd>${r.entry_area_id ? `첫 화면에서 <b>${esc(LBL[r.entry_area_id])}</b> 카드를 눌러 시작${r.entry_area_id !== r.area_id ? ` → 신청 중 <b>${esc(LBL[r.area_id])}</b>(으)로 바꿈` : ""}` : "로그인 후 신청 화면에서 바로 시작"}</dd>
     <dt>선택한 고민</dt><dd>${groups.map(([a, l]) => `<div class="ans-group"><span class="badge topic">${esc(LBL[a])}</span>
         ${l.map((id) => `<span class="ans-chip ${id === first ? "first" : ""}">${id === first ? "★ " : ""}${esc(LBL[id] || id)}</span>`).join("")}</div>`).join("") || "-"}
       ${ids.includes("common.other") ? `<div>여기에 없는 고민: ${r.other_concern ? esc(r.other_concern) : "<span class='hint'>(적지 않음)</span>"}</div>` : ""}
@@ -795,7 +882,7 @@ async function loadRequests() {
     <div class="item ${r.crisis_flag ? "flag" : ""}">
       <div class="row between">
         <b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)}) ${classTag(r.profiles?.student_no)}</b>
-        <span><span class="badge topic">${esc(LBL[r.area_id] || r.topic)}</span><span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span>
+        <span>${r.entry_area_id ? `<span class="badge entry" title="첫 화면 분야 카드에서 시작">첫 화면 카드</span>` : ""}<span class="badge topic">${esc(LBL[r.area_id] || r.topic)}</span><span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span>
       </div>
       ${r.crisis_flag ? textFlagHTML : ""}
       <p>${r.slots ? fmt(r.slots.starts_at) + ` (${r.slots.duration_min}분)` : "시간 협의 필요"} · 신청 ${new Date(r.created_at).toLocaleDateString("ko-KR")}</p>

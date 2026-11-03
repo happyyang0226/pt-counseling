@@ -501,3 +501,11 @@ returns json language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public.cs_my_info() from public, anon;
 grant execute on function public.cs_my_info() to authenticated;
+
+-- ============================================================
+-- 2026-11-03: 첫 화면 분야 카드에서 시작한 신청 기록 (교수 확인용)
+-- cs_prepare_request()에 entry_area_id 검증 한 줄이 추가됨:
+--   if new.entry_area_id is not null and not exists (select 1 from cs_items where id = new.entry_area_id and kind = 'area')
+--   then raise exception '알 수 없는 시작 분야입니다.'; end if;
+-- ============================================================
+alter table public.cs_requests add column if not exists entry_area_id text references public.cs_items(id);
