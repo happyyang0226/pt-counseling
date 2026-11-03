@@ -64,12 +64,12 @@
   <section id="intro-areas" class="hidden">
     <div class="card">
       <h2>이런 이야기를 나눌 수 있어요</h2>
-      <p class="hint">상담을 신청할 때 아래 분야 가운데 하나를 고릅니다. 딱 맞는 분야가 없으면 "기타"를 고르면 됩니다.</p>
+      <p class="hint">로그인한 뒤 분야와 고민을 버튼으로 고르기만 하면 신청할 수 있어요. 글을 쓰지 않아도 괜찮고, 무엇부터 말할지 모르겠으면 "잘 모르겠어요"를 고르면 됩니다.</p>
       <div class="area-list" id="area-list-intro"></div>
     </div>
     <div class="card">
       <h2>전문 상담이 더 도움이 될 때</h2>
-      <p class="hint">아래 고민은 지도교수에게 먼저 말해도 되고("기타" 선택), 학교 학생상담센터에서 전문 상담 선생님과 정기적으로 상담을 받을 수도 있습니다. 지도교수가 상담센터 연결을 도와드립니다.</p>
+      <p class="hint">아래 고민은 지도교수에게 먼저 이야기해도 되고, 학교 학생상담센터에서 전문 상담 선생님과 정기적으로 상담을 받을 수도 있어요. 지도교수가 상담센터 연결을 도와드립니다.</p>
       <div class="area-list" id="area-list-center"></div>
     </div>
   </section>
@@ -79,10 +79,10 @@
     <h2>개인정보 수집·이용 동의</h2>
     <p class="hint">상담을 시작하기 전에 아래 내용을 읽어 주세요.</p>
     <dl class="consent">
-      <dt>수집 항목</dt><dd>학번, 이름, 상담 신청 내용, 사전 질문지 응답, 상담 기록</dd>
+      <dt>수집 항목</dt><dd>학번, 이름, 반, 상담 신청 때 고른 응답과 직접 적은 글, 상담 기록</dd>
       <dt>이용 목적</dt><dd>지도교수의 학생 지도와 상담</dd>
       <dt>열람 범위</dt><dd>지도교수만 볼 수 있습니다. 다만 학생의 안전이 걱정되는 위급한 상황에서는 학교 학생상담센터 등 전문 기관과 필요한 범위에서 연계할 수 있습니다.</dd>
-      <dt>보관 기간</dt><dd>졸업 후 1년까지 보관한 뒤 삭제합니다.</dd>
+      <dt>보관 기간</dt><dd>학교 개인정보 처리방침에 따릅니다.</dd>
       <dt>동의 거부</dt><dd>동의하지 않을 수 있습니다. 이 경우 웹앱 대신 교수님 연구실로 직접 찾아와 상담을 받을 수 있습니다.</dd>
     </dl>
     <div class="row end">
@@ -105,68 +105,27 @@
       <p id="my-count-msg" class="hint">이번 학기에는 지도교수 상담을 3번 받아야 합니다.</p>
     </div>
 
+    <section class="card wizard" id="wizard" aria-labelledby="wz-heading">
+      <h2 id="wz-heading">상담 신청</h2>
+      <div class="wz-progress" id="wz-progress">
+        <ol class="wz-steps" id="wz-steps"></ol>
+        <div class="wz-bar" aria-hidden="true"><span id="wz-bar"></span></div>
+        <p class="wz-count" id="wz-count" aria-live="polite"></p>
+      </div>
+      <div id="wz-body" class="wz-body"></div>
+      <p id="wz-msg" class="wz-msg" role="alert"></p>
+      <div class="wz-nav" id="wz-nav">
+        <button type="button" id="wz-prev" class="wz-prev">이전</button>
+        <button type="button" id="wz-next" class="primary wz-next">다음</button>
+      </div>
+    </section>
+
     <div class="card" id="feedback-card">
       <div class="row between">
         <h2>교수님 피드백 <span id="fb-new" class="badge new hidden">새 피드백</span></h2>
       </div>
       <div class="chips topic-filter" id="fb-filter"></div>
       <div id="my-feedback"></div>
-    </div>
-
-    <details class="card area-help">
-      <summary>상담 분야 안내 보기</summary>
-      <div class="area-list" id="area-list-student"></div>
-      <p class="hint">가정, 이성관계, 성격, 성 관련 고민은 "기타"로 신청하거나 학생상담센터 전문 상담을 이용할 수 있습니다.</p>
-    </details>
-
-    <div class="card">
-      <h2>상담 신청</h2>
-      <form id="form-request">
-        <label>희망 날짜·시간
-          <select name="slot_id" id="slot-select" required></select>
-        </label>
-        <p id="no-slot" class="hint hidden">지금 신청할 수 있는 시간이 없습니다. 교수님이 시간을 열면 다시 확인해 주세요.</p>
-        <div class="row">
-          <label>상담 방식
-            <select name="mode" required><option>대면</option><option>온라인</option></select>
-          </label>
-          <label>상담 분야
-            <select name="topic" required>
-              <option>취업</option><option>학업</option><option>진로</option>
-              <option>학교생활</option><option>교우관계</option><option>기타</option>
-            </select>
-          </label>
-        </div>
-        <p id="topic-desc" class="topic-desc"></p>
-        <h3>사전 질문지</h3>
-        <label>요즘 고민
-          <textarea name="concern" id="concern" rows="4" placeholder="편하게 적어 주세요."></textarea>
-        </label>
-        <fieldset class="scale" id="worry-scale">
-          <legend>지금 고민은 얼마나 큰가요?</legend>
-          <label><input type="radio" name="worry_level" value="1" required />1</label>
-          <label><input type="radio" name="worry_level" value="2" />2</label>
-          <label><input type="radio" name="worry_level" value="3" />3</label>
-          <label><input type="radio" name="worry_level" value="4" />4</label>
-          <label><input type="radio" name="worry_level" value="5" />5</label>
-          <span class="hint">1 가벼운 편 · 5 혼자 감당하기 어려움</span>
-        </fieldset>
-        <div id="crisis-live" class="crisis hidden"></div>
-        <fieldset class="scale">
-          <legend>학교생활 만족도</legend>
-          <label><input type="radio" name="satisfaction" value="1" required />1</label>
-          <label><input type="radio" name="satisfaction" value="2" />2</label>
-          <label><input type="radio" name="satisfaction" value="3" />3</label>
-          <label><input type="radio" name="satisfaction" value="4" />4</label>
-          <label><input type="radio" name="satisfaction" value="5" />5</label>
-          <span class="hint">1 매우 불만족 · 5 매우 만족</span>
-        </fieldset>
-        <label>교수님께 바라는 점
-          <textarea name="wish" rows="3"></textarea>
-        </label>
-        <button class="primary" type="submit">신청하기</button>
-        <p id="request-msg" class="msg"></p>
-      </form>
     </div>
 
     <div class="card">
@@ -209,8 +168,8 @@
     <div id="admin-dashboard" class="adminpane">
       <div class="stats" id="dash-stats"></div>
       <div class="card">
-        <h2>주의가 필요한 학생</h2>
-        <p class="hint">위기 표현이 있거나 고민 크기 4점 이상이며 아직 상담을 마치지 않은 신청입니다.</p>
+        <h2>글을 먼저 확인할 신청</h2>
+        <p class="hint">학생이 직접 쓴 글에 도움이 필요할 수 있는 표현이 있어 표시한 신청입니다. 고른 응답으로 위험도를 판정하지는 않습니다.</p>
         <div id="dash-alerts"></div>
       </div>
       <div class="card">
@@ -227,7 +186,8 @@
       <div class="card">
         <div class="row between">
           <h2>상담 신청 목록</h2>
-          <select id="status-filter">
+          <select id="area-filter" aria-label="상담분야로 거르기"><option value="">모든 분야</option></select>
+          <select id="status-filter" aria-label="상태로 거르기">
             <option value="대기">대기</option><option value="확정">확정</option>
             <option value="완료">완료</option><option value="취소">취소</option><option value="">전체</option>
           </select>
@@ -332,10 +292,7 @@
     <div class="row">
       <label>상담 날짜<input type="date" name="counsel_date" required /></label>
       <label>주 상담 분야
-        <select name="topic">
-          <option>취업</option><option>학업</option><option>진로</option>
-          <option>학교생활</option><option>교우관계</option><option>기타</option>
-        </select>
+        <select name="topic"></select>
       </label>
     </div>
     <fieldset class="fb-box">

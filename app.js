@@ -14,18 +14,19 @@ const fmt = (iso) => new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seo
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" }) : "");
 const studentEmail = (no) => `${String(no).trim()}@${CFG.STUDENT_EMAIL_DOMAIN}`;
 const CRISIS_RE = /(죽고\s*싶|자살|자해|사라지고\s*싶|살기\s*싫)/;
-const TOPICS = ["취업", "학업", "진로", "학교생활", "교우관계", "기타"];
+const TOPICS = ["공부·성적", "진로·취업", "학교생활", "친구·대인관계", "마음·스트레스", "경제·생활", "잘 모르겠어요"];
 const REQUIRED = 3; // 한 학기 의무 상담 횟수
 
-// 상담 분야 안내 (첫 화면, 학생 화면, 신청서에 함께 쓴다)
-const AREAS = {
-  취업: { icon: "💼", text: "물리치료사로 어디에서 일하고 싶은지(병원, 재활센터, 요양기관, 스포츠·지역사회 등), 실습기관과 취업처 정보, 이력서와 면접 준비, 국가시험 이후의 계획이 궁금할 때 상담을 받을 수 있습니다." },
-  학업: { icon: "📚", text: "공부한 만큼 성적이 나오지 않거나 집중이 잘 되지 않을 때, 시험을 앞두고 불안과 긴장이 커서 힘들 때, 해부학처럼 공부할 양이 많은 과목의 학습 방법을 찾고 싶을 때 도움을 받을 수 있습니다." },
-  진로: { icon: "🧭", text: "물리치료학이 나와 맞는지 확신이 서지 않거나, 앞으로의 방향(전공심화·대학원 진학, 관심 있는 전문 분야 등)을 정하기 어려울 때 나의 적성과 흥미를 함께 살펴볼 수 있습니다." },
-  학교생활: { icon: "🏫", text: "대학 생활이나 기숙사·자취 생활에 적응하기 어려울 때, 시간 관리와 아르바이트·학업의 균형이 고민될 때, 장학금·휴학·복학 같은 학사 절차가 궁금할 때 상담을 받을 수 있습니다." },
-  교우관계: { icon: "🤝", text: "새로운 환경에서 친구를 사귀기 어렵거나, 동기·선후배와의 관계, 조별 과제와 실습에서 생긴 갈등 때문에 마음이 불편할 때 함께 이야기할 수 있습니다." },
-  기타: { icon: "💬", text: "위 분야에 딱 맞지 않는 고민도 괜찮습니다. 건강, 경제적 어려움, 가족이나 이성 관계, 성격에 대한 고민 등 무엇이든 편하게 신청하세요. 필요하면 학생상담센터 전문 상담으로 연결해 드립니다." },
-};
+// 항목 사전(cs_items): 화면 문구와 별개인 고유 ID
+let ITEMS = [];
+const LBL = {};
+const itemsOf = (kind, area) => ITEMS.filter((i) => i.kind === kind && (area === undefined || i.area_id === area)).sort((x, y) => x.sort - y.sort);
+async function loadItems() {
+  if (ITEMS.length) return;
+  const { data } = await sb.from("cs_items").select("*").eq("active", true);
+  ITEMS = data || [];
+  ITEMS.forEach((i) => (LBL[i.id] = i.label));
+}
 const CENTER_AREAS = [
   ["가정", "가족 사이의 갈등이나 집안에 생긴 어려운 일 때문에 마음이 힘들 때"],
   ["이성관계", "연애 관계가 어렵고 힘들게 느껴지거나, 관계에 지나치게 매달리게 되어 괴로울 때"],
@@ -33,16 +34,10 @@ const CENTER_AREAS = [
   ["성 상담", "성에 관한 궁금증이나 정체감의 혼란이 있을 때, 성폭력·성희롱으로 어려움을 겪을 때 (피해가 있었다면 학생상담센터나 전문 기관에 바로 도움을 요청하세요)"],
 ];
 function renderAreas() {
-  const html = TOPICS.map((t) => `<div class="area"><div class="area-head"><span class="area-icon">${AREAS[t].icon}</span><b>${t}</b></div><p>${AREAS[t].text}</p></div>`).join("");
-  $("#area-list-intro").innerHTML = html;
-  $("#area-list-student").innerHTML = html;
+  $("#area-list-intro").innerHTML = itemsOf("area").map((a) => `<div class="area"><div class="area-head"><span class="area-icon" aria-hidden="true">${a.icon}</span><b>${esc(a.label)}</b></div>
+    <p>${esc(a.hint)}</p><p class="area-ex">${itemsOf("concern", a.id).slice(0, 3).map((c) => `"${esc(c.label)}"`).join(" ")}</p></div>`).join("");
   $("#area-list-center").innerHTML = CENTER_AREAS.map(([t, d]) => `<div class="area center"><div class="area-head"><b>${t}</b></div><p>${d}</p></div>`).join("");
-  const sel = $('#form-request [name="topic"]');
-  const desc = () => ($("#topic-desc").textContent = AREAS[sel.value]?.text || "");
-  sel.addEventListener("change", desc);
-  desc();
 }
-renderAreas();
 const IDLE_MIN = 20;
 
 let me = null; // cs_profiles 행
@@ -77,6 +72,8 @@ function resetIdle() {
 
 // ---------- 시작 ----------
 async function boot() {
+  await loadItems();
+  renderAreas();
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return showLogin(sessionStorage.getItem("logout-msg") || "");
   sessionStorage.removeItem("logout-msg");
@@ -179,19 +176,6 @@ $("#form-admin-login").onsubmit = async (e) => {
 };
 
 // ---------- 학생 화면 ----------
-async function loadStudent() {
-  const { data: slots } = await sb.rpc("cs_available_slots");
-  const sel = $("#slot-select");
-  sel.innerHTML = (slots || []).map((s) => `<option value="${s.id}">${fmt(s.starts_at)} (${s.duration_min}분)</option>`).join("");
-  show($("#no-slot"), !slots?.length);
-  sel.disabled = !slots?.length;
-  loadMyRequests();
-  loadPublicQuestions();
-  loadMyProgress();
-  loadMyFeedback();
-  watchFeedback();
-}
-
 // 이번 학기 의무 상담 진행 상황
 async function loadMyProgress() {
   const sem = semesterStart();
@@ -251,62 +235,406 @@ function toast(text) {
   setTimeout(() => t.remove(), 4000);
 }
 
-function updateCrisisBox() {
-  const f = $("#form-request");
-  const hit = CRISIS_RE.test(f.concern.value) || f.querySelector('[name="worry_level"]:checked')?.value === "5";
-  $("#crisis-live").innerHTML = hit ? crisisHTML() : "";
-  show($("#crisis-live"), hit);
-}
-$("#concern").addEventListener("input", updateCrisisBox);
-$$('[name="worry_level"]').forEach((r) => r.addEventListener("change", updateCrisisBox));
+// ---------- 학생: 단계별 상담 신청 ----------
+// 응답은 메모리(W)에만 둔다. URL, localStorage, 콘솔에 남기지 않는다.
+const WZ_STEPS = ["상담분야", "고민 고르기", "상담 준비하기", "방식·시간", "신청 내용 확인"];
+const newWizard = () => ({
+  step: 1, area: null, concerns: [], otherText: "", moreOpen: false, moreTab: null, areaNote: null,
+  first: null, since: null, impact: null, help: [], mode: null, slot: null, extra: "",
+  token: crypto.randomUUID(), submitting: false, done: null,
+});
+let W = newWizard();
+let SLOTS = [];
+let MYINFO = null;
 
-$("#form-request").onsubmit = async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  const row = {
-    student_id: me.id,
-    slot_id: Number(f.get("slot_id")),
-    mode: f.get("mode"),
-    topic: f.get("topic"),
-    concern: f.get("concern"),
-    worry_level: Number(f.get("worry_level")),
-    satisfaction: Number(f.get("satisfaction")),
-    wish: f.get("wish"),
-  };
-  const { error } = await sb.from("cs_requests").insert(row);
-  if (error) {
-    $("#request-msg").textContent = /duplicate|unique/i.test(error.message)
-      ? "방금 다른 학생이 그 시간을 신청했습니다. 다른 시간을 골라 주세요."
-      : "신청 중 문제가 생겼습니다: " + error.message;
-    return loadStudent();
-  }
-  $("#request-msg").textContent = "신청했습니다. 교수님이 확정하면 상태가 바뀝니다.";
-  const keepCrisis = CRISIS_RE.test(row.concern || "") || row.worry_level === 5;
-  e.target.reset();
-  $('#form-request [name="topic"]').dispatchEvent(new Event("change"));
-  show($("#crisis-live"), keepCrisis);
-  loadStudent();
+const isCommon = (id) => id.startsWith("common.");
+const realConcerns = () => W.concerns.filter((id) => !isCommon(id));
+const areaOf = (id) => ITEMS.find((i) => i.id === id)?.area_id;
+const areaItem = (id) => ITEMS.find((i) => i.id === id && i.kind === "area");
+const slotLabel = (id) => {
+  const s = SLOTS.find((x) => String(x.id) === String(id));
+  return s ? `${fmt(s.starts_at)} (${s.duration_min}분)` : "";
 };
 
+function optHTML({ type, name, id, label, sub, icon, checked }) {
+  return `<label class="opt ${checked ? "on" : ""}">
+    <input type="${type}" name="${name}" value="${esc(id)}" ${checked ? "checked" : ""} />
+    <span class="opt-mark" aria-hidden="true"></span>
+    ${icon ? `<span class="opt-icon" aria-hidden="true">${icon}</span>` : ""}
+    <span class="opt-text"><b>${esc(label)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span>
+  </label>`;
+}
+function groupHTML({ legend, multi, name, items, selected, gid, extra = "" }) {
+  return `<fieldset class="q" id="${gid || "q-" + name}">
+    <legend>${legend}</legend>
+    <p class="q-hint">${multi ? "여러 개 골라도 돼요" : "하나를 골라 주세요"}</p>
+    ${extra}
+    <div class="opts">${items.map((i) => optHTML({ type: multi ? "checkbox" : "radio", name, id: i.id, label: i.label, sub: i.sub, icon: i.icon,
+      checked: multi ? selected.includes(i.id) : selected === i.id })).join("")}</div>
+  </fieldset>`;
+}
+const concernItems = (area) => itemsOf("concern", area).map((c) => ({ id: c.id, label: c.label }));
+
+async function loadStudent() {
+  const [{ data: slots }, { data: info }] = await Promise.all([sb.rpc("cs_available_slots"), sb.rpc("cs_my_info")]);
+  SLOTS = slots || [];
+  MYINFO = info;
+  if (W.slot && W.slot !== "later" && !SLOTS.some((s) => String(s.id) === String(W.slot))) W.slot = null;
+  renderWizard(false);
+  loadMyRequests();
+  loadPublicQuestions();
+  loadMyProgress();
+  loadMyFeedback();
+  watchFeedback();
+}
+
+function renderProgress() {
+  const done = W.step > WZ_STEPS.length;
+  show($("#wz-progress"), !done);
+  show($("#wz-nav"), !done);
+  if (done) return;
+  $("#wz-steps").innerHTML = WZ_STEPS.map((t, i) => {
+    const n = i + 1, st = n < W.step ? "done" : n === W.step ? "now" : "";
+    return `<li class="${st}" ${n === W.step ? 'aria-current="step"' : ""}><span class="n">${n < W.step ? "✓" : n}</span><span class="t">${t}</span></li>`;
+  }).join("");
+  $("#wz-bar").style.width = `${(W.step / WZ_STEPS.length) * 100}%`;
+  $("#wz-count").textContent = `${W.step} / ${WZ_STEPS.length} 단계 · ${WZ_STEPS[W.step - 1]}`;
+  show($("#wz-prev"), W.step > 1);
+  $("#wz-next").textContent = W.step === WZ_STEPS.length ? "상담 신청하기" : "다음";
+  $("#wz-next").disabled = W.submitting;
+}
+
+function renderWizard(moveFocus = true) {
+  $("#wz-msg").textContent = "";
+  renderProgress();
+  const body = $("#wz-body");
+  body.innerHTML = [null, step1, step2, step3, step4, step5, stepDone][W.step]();
+  bindWizard();
+  if (moveFocus) {
+    const h = $(".wz-title", body);
+    if (h) { h.focus({ preventScroll: true }); $("#wizard").scrollIntoView({ behavior: "smooth", block: "start" }); }
+  }
+}
+
+// 1단계: 상담분야
+function step1() {
+  const areas = itemsOf("area").map((a) => ({ id: a.id, label: a.label, sub: a.hint, icon: a.icon }));
+  return `<h3 class="wz-title" tabindex="-1">상담분야 고르기</h3>` +
+    groupHTML({ legend: "어떤 이야기를 나누고 싶으세요?", name: "area", items: areas, selected: W.area }) +
+    `<div id="wz-area-note" aria-live="polite">${areaNoteHTML()}</div>
+     <p class="hint">다음 단계에서 다른 분야의 고민도 함께 고를 수 있어요.</p>`;
+}
+function areaNoteHTML() {
+  if (!W.areaNote) return "";
+  const kept = realConcerns().filter((c) => areaOf(c) === W.areaNote);
+  if (!kept.length) return "";
+  return `<div class="note-box">앞에서 고른 <b>${esc(LBL[W.areaNote])}</b> 고민 ${kept.length}개는 지우지 않고 그대로 두었어요.
+    다음 단계의 "다른 분야의 고민"에서 확인할 수 있어요.
+    <button type="button" class="small" id="wz-clear-prev">그 고민 ${kept.length}개 지우기</button></div>`;
+}
+
+// 2단계: 고민 고르기
+function otherAreas() { return itemsOf("area").filter((a) => a.id !== W.area); }
+function step2() {
+  const a = areaItem(W.area);
+  const others = otherAreas();
+  if (!W.moreTab || W.moreTab === W.area) W.moreTab = (others.find((o) => realConcerns().some((c) => areaOf(c) === o.id)) || others[0]).id;
+  const otherCount = realConcerns().filter((c) => areaOf(c) !== W.area).length;
+  if (otherCount) W.moreOpen = true;
+  return `<h3 class="wz-title" tabindex="-1">고민 고르기</h3>` +
+    groupHTML({ legend: "어떤 고민이 있으신가요? 해당하는 것을 골라 주세요.", multi: true, name: "concern", gid: "q-concern",
+      items: concernItems(W.area), selected: W.concerns,
+      extra: `<p class="q-area"><span aria-hidden="true">${a.icon}</span> ${esc(a.label)}</p>` }) +
+    `<div class="more">
+      <button type="button" class="more-btn" id="wz-more-btn" aria-expanded="${W.moreOpen}" aria-controls="wz-more">
+        <span aria-hidden="true">＋</span> 다른 분야의 고민도 추가할래요 <span class="more-n" id="wz-more-n">${otherCount ? `(${otherCount}개 골랐어요)` : ""}</span></button>
+      <div id="wz-more" ${W.moreOpen ? "" : "hidden"}>
+        <div class="area-tabs" role="tablist" aria-label="다른 상담분야">
+          ${others.map((o) => `<button type="button" role="tab" id="tab-${o.id}" data-tab="${o.id}" aria-controls="wz-more-panel"
+              aria-selected="${o.id === W.moreTab}" tabindex="${o.id === W.moreTab ? 0 : -1}">
+              <span aria-hidden="true">${o.icon}</span> ${esc(o.label)} <span class="tab-n" data-n="${o.id}"></span></button>`).join("")}
+        </div>
+        <div role="tabpanel" id="wz-more-panel" aria-labelledby="tab-${W.moreTab}">${morePanelHTML()}</div>
+      </div>
+    </div>
+    <div class="opts commons">
+      ${optHTML({ type: "checkbox", name: "common", id: "common.other", label: "여기에 없는 고민이 있어요", checked: W.concerns.includes("common.other") })}
+      <div id="wz-other" class="other-box" ${W.concerns.includes("common.other") ? "" : "hidden"}>
+        <label for="wz-other-text">어떤 고민인지 짧게 적어 주세요 <span class="optional">(선택)</span></label>
+        <textarea id="wz-other-text" rows="2" maxlength="500">${esc(W.otherText)}</textarea>
+        <p class="hint">적지 않아도 다음으로 넘어갈 수 있어요.</p>
+      </div>
+      ${optHTML({ type: "checkbox", name: "common", id: "common.later", label: "자세한 이야기는 상담 때 할게요", checked: W.concerns.includes("common.later") })}
+    </div>
+    <div id="wz-first" aria-live="polite">${firstHTML()}</div>`;
+}
+function morePanelHTML() {
+  return `<div class="opts">${concernItems(W.moreTab).map((c) => optHTML({ type: "checkbox", name: "concern", id: c.id, label: c.label, checked: W.concerns.includes(c.id) })).join("")}</div>`;
+}
+function firstHTML() {
+  const real = realConcerns();
+  if (real.length < 2) return "";
+  if (W.first && W.first !== "first.later" && !real.includes(W.first)) W.first = null;
+  const items = real.map((id) => ({ id, label: LBL[id], sub: areaOf(id) !== W.area ? LBL[areaOf(id)] : "" }))
+    .concat([{ id: "first.later", label: "상담하면서 정할게요" }]);
+  return groupHTML({ legend: "이 중에서 먼저 이야기하고 싶은 것은 무엇인가요?", name: "first", items, selected: W.first });
+}
+function refreshStep2() {
+  const otherCount = realConcerns().filter((c) => areaOf(c) !== W.area).length;
+  $("#wz-more-n").textContent = otherCount ? `(${otherCount}개 골랐어요)` : "";
+  $$("[data-n]").forEach((s) => {
+    const n = realConcerns().filter((c) => areaOf(c) === s.dataset.n).length;
+    s.textContent = n ? n : "";
+  });
+  const had = $("#wz-first").innerHTML.trim() !== "";
+  $("#wz-first").innerHTML = firstHTML();
+  bindInputs($("#wz-first"));
+  if (!had && realConcerns().length >= 2) $("#wz-first").classList.add("pop");
+}
+
+// 3단계: 상담 준비하기
+function step3() {
+  const opts = (kind) => itemsOf(kind).map((i) => ({ id: i.id, label: i.label }));
+  return `<h3 class="wz-title" tabindex="-1">상담 준비하기</h3>
+    <p class="hint">상담 전에 몇 가지만 골라 주세요. 정답은 없어요. 말하기 어려우면 "상담 때 이야기할게요"를 고르면 돼요.</p>` +
+    groupHTML({ legend: "이 고민은 언제부터 있었나요?", name: "since", items: opts("since"), selected: W.since }) +
+    groupHTML({ legend: "요즘 이 고민이 일상이나 공부에 얼마나 영향을 주나요?", name: "impact", items: opts("impact"), selected: W.impact }) +
+    groupHTML({ legend: "상담에서 어떤 도움을 받고 싶으세요?", multi: true, name: "help", items: opts("help"), selected: W.help });
+}
+
+// 4단계: 방식·시간
+function step4() {
+  const modes = itemsOf("mode").map((i) => ({ id: i.id, label: i.label }));
+  const slots = SLOTS.map((s) => ({ id: String(s.id), label: fmt(s.starts_at), sub: `${s.duration_min}분 · 교수님이 확인하면 확정돼요` }))
+    .concat([{ id: "later", label: "시간은 교수님과 따로 정할게요", sub: "교수님이 연락드려요" }]);
+  return `<h3 class="wz-title" tabindex="-1">상담 방식과 시간</h3>` +
+    groupHTML({ legend: "어떤 방식으로 상담받고 싶으세요?", name: "mode", items: modes, selected: W.mode }) +
+    groupHTML({ legend: "언제 만나면 좋을까요?", name: "slot", items: slots, selected: W.slot,
+      extra: SLOTS.length ? "" : `<p class="note-box">지금 열려 있는 상담 시간이 없어요. "따로 정할게요"를 고르면 교수님이 시간을 알려 드려요.</p>` }) +
+    `<div class="q extra">
+      <label for="wz-extra" class="q-legend">추가로 전하고 싶은 이야기가 있나요? <span class="optional">(선택)</span></label>
+      <textarea id="wz-extra" rows="3" maxlength="2000" placeholder="적지 않아도 신청할 수 있어요.">${esc(W.extra)}</textarea>
+      <div id="wz-help" class="crisis" ${CRISIS_RE.test(W.extra) ? "" : "hidden"}>${crisisHTML()}</div>
+    </div>`;
+}
+
+// 5단계: 확인
+function step5() {
+  const real = realConcerns();
+  const groups = [W.area, ...itemsOf("area").map((a) => a.id).filter((id) => id !== W.area)]
+    .map((a) => [a, real.filter((c) => areaOf(c) === a)]).filter(([, ids]) => ids.length);
+  const concernsHTML = (groups.map(([a, ids]) => `<div class="sum-group"><span class="badge topic">${esc(LBL[a])}</span>
+      <ul>${ids.map((id) => `<li>${esc(LBL[id])}</li>`).join("")}</ul></div>`).join("") || "")
+    + (W.concerns.includes("common.other") ? `<p>여기에 없는 고민: ${W.otherText.trim() ? esc(W.otherText.trim()) : "<span class='hint'>(적지 않음)</span>"}</p>` : "")
+    + (W.concerns.includes("common.later") ? `<p>자세한 이야기는 상담 때 할게요</p>` : "");
+  const first = real.length >= 2 ? LBL[W.first] : real.length === 1 ? LBL[real[0]] : "상담하면서 정할게요";
+  const who = MYINFO ? `${esc(MYINFO.name)} · ${esc(MYINFO.student_no)}${MYINFO.class ? ` · ${CLASS_NAME[MYINFO.class]}` : ""}` : esc(me.name);
+  const row = (label, value, step) => `<div class="sum-row"><dt>${label}</dt><dd>${value}</dd>
+      <dd class="sum-edit">${step ? `<button type="button" class="small" data-goto="${step}" aria-label="${label} 수정">수정</button>` : ""}</dd></div>`;
+  return `<h3 class="wz-title" tabindex="-1">신청 내용 확인</h3>
+    <p class="hint">아래 내용으로 신청할게요. 고치고 싶은 곳은 "수정"을 누르세요. 고른 내용은 그대로 남아 있어요.</p>
+    <dl class="summary-list">
+      ${row("신청하는 사람", who)}
+      ${row("주된 상담분야", `<span aria-hidden="true">${areaItem(W.area).icon}</span> ${esc(LBL[W.area])}`, 1)}
+      ${row("선택한 고민", concernsHTML, 2)}
+      ${row("먼저 이야기할 고민", esc(first), 2)}
+      ${row("고민이 시작된 때", esc(LBL[W.since]), 3)}
+      ${row("일상·공부에 주는 영향", esc(LBL[W.impact]), 3)}
+      ${row("받고 싶은 도움", W.help.map((h) => esc(LBL[h])).join(", "), 3)}
+      ${row("상담 방식", esc(LBL[W.mode]), 4)}
+      ${row("희망 시간", W.slot === "later" ? "교수님과 따로 정하기" : `${esc(slotLabel(W.slot))} <span class="badge s-대기">교수님 확정 전</span>`, 4)}
+      ${row("추가로 전한 이야기", W.extra.trim() ? esc(W.extra.trim()) : "<span class='hint'>없음</span>", 4)}
+    </dl>`;
+}
+
+function stepDone() {
+  const d = W.done;
+  return `<div class="done-box">
+    <div class="done-check" aria-hidden="true">✓</div>
+    <h3 class="wz-title" tabindex="-1">상담 신청이 접수됐어요</h3>
+    <p>${d.slot ? `희망 시간 <b>${esc(d.slot)}</b>은 아직 <b>확정 전</b>이에요. 교수님이 확인하면 "내 상담 내역"에서 "확정"으로 바뀌어요.`
+      : "교수님이 상담 시간을 정해 연락드릴게요."}</p>
+    <p class="hint">${esc(d.area)} · ${esc(d.mode)}</p>
+    <button type="button" class="primary" id="wz-new">다른 상담 신청하기</button>
+  </div>`;
+}
+
+// 입력 연결
+function bindInputs(root) {
+  $$("input", root).forEach((inp) => (inp.onchange = () => onPick(inp)));
+}
+function bindWizard() {
+  const body = $("#wz-body");
+  bindInputs(body);
+  $("#wz-clear-prev")?.addEventListener("click", clearPrevArea);
+  const more = $("#wz-more-btn");
+  if (more) more.onclick = () => {
+    W.moreOpen = !W.moreOpen;
+    more.setAttribute("aria-expanded", W.moreOpen);
+    $("#wz-more").hidden = !W.moreOpen;
+    if (W.moreOpen) $(`#tab-${W.moreTab}`).focus();
+  };
+  const tabs = $$('[role="tab"]', body);
+  tabs.forEach((t, i) => {
+    t.onclick = () => selectTab(t.dataset.tab);
+    t.onkeydown = (e) => {
+      const k = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (k) { e.preventDefault(); const nx = tabs[(i + k + tabs.length) % tabs.length]; selectTab(nx.dataset.tab); nx.focus(); }
+      if (e.key === "Home") { e.preventDefault(); selectTab(tabs[0].dataset.tab); tabs[0].focus(); }
+      if (e.key === "End") { e.preventDefault(); const l = tabs[tabs.length - 1]; selectTab(l.dataset.tab); l.focus(); }
+    };
+  });
+  if (W.step === 2) refreshStep2();
+  const other = $("#wz-other-text");
+  if (other) other.oninput = () => (W.otherText = other.value);
+  const extra = $("#wz-extra");
+  if (extra) extra.oninput = () => { W.extra = extra.value; $("#wz-help").hidden = !CRISIS_RE.test(W.extra); };
+  $$("[data-goto]", body).forEach((b) => (b.onclick = () => { W.step = Number(b.dataset.goto); renderWizard(); }));
+  $("#wz-new")?.addEventListener("click", () => { W = newWizard(); renderWizard(); });
+}
+function selectTab(id) {
+  W.moreTab = id;
+  $$('[role="tab"]').forEach((t) => { const on = t.dataset.tab === id; t.setAttribute("aria-selected", on); t.tabIndex = on ? 0 : -1; });
+  const panel = $("#wz-more-panel");
+  panel.setAttribute("aria-labelledby", `tab-${id}`);
+  panel.innerHTML = morePanelHTML();
+  bindInputs(panel);
+}
+function clearPrevArea() {
+  const prev = W.areaNote;
+  W.concerns = W.concerns.filter((c) => areaOf(c) !== prev);
+  W.areaNote = null;
+  $("#wz-area-note").innerHTML = `<p class="note-box">지웠어요.</p>`;
+}
+
+function onPick(inp) {
+  const { name, value, checked, type } = inp;
+  // 선택 표시(배경·테두리·체크) 갱신: 같은 이름의 모든 보기
+  $$(`#wz-body input[name="${name}"]`).forEach((x) => {
+    if (x.value === value && type === "checkbox") x.checked = checked;
+    x.closest(".opt").classList.toggle("on", x.checked);
+  });
+  if (name === "area") {
+    const prev = W.area;
+    W.area = value;
+    if (prev && prev !== value && realConcerns().some((c) => areaOf(c) === prev)) W.areaNote = prev;
+    else if (W.areaNote === value) W.areaNote = null;
+    $("#wz-area-note").innerHTML = areaNoteHTML();
+    $("#wz-clear-prev")?.addEventListener("click", clearPrevArea);
+  } else if (name === "concern" || name === "common") {
+    W.concerns = checked ? [...new Set([...W.concerns, value])] : W.concerns.filter((c) => c !== value);
+    if (value === "common.other") { $("#wz-other").hidden = !checked; if (checked) $("#wz-other-text").focus(); }
+    refreshStep2();
+  } else if (name === "first") W.first = value;
+  else if (name === "since") W.since = value;
+  else if (name === "impact") W.impact = value;
+  else if (name === "help") W.help = checked ? [...new Set([...W.help, value])] : W.help.filter((h) => h !== value);
+  else if (name === "mode") W.mode = value;
+  else if (name === "slot") W.slot = value;
+  $("#wz-msg").textContent = "";
+}
+
+// 단계별 확인 (빠진 답이 있으면 그 질문으로 안내)
+function wzCheck() {
+  const need = (ok, msg, gid) => (ok ? null : { msg, gid });
+  const checks = {
+    1: [need(W.area, "상담분야를 하나 골라 주세요. 잘 모르겠으면 \"잘 모르겠어요\"를 골라도 돼요.", "q-area")],
+    2: [need(W.concerns.length, "고민을 하나 이상 고르거나, \"자세한 이야기는 상담 때 할게요\"를 눌러 주세요.", "q-concern"),
+        need(realConcerns().length < 2 || W.first, "먼저 이야기하고 싶은 고민을 하나 골라 주세요. 정하기 어려우면 \"상담하면서 정할게요\"를 고르면 돼요.", "q-first")],
+    3: [need(W.since, "고민이 언제부터 있었는지 하나 골라 주세요.", "q-since"),
+        need(W.impact, "고민이 주는 영향을 하나 골라 주세요.", "q-impact"),
+        need(W.help.length, "받고 싶은 도움을 하나 이상 골라 주세요.", "q-help")],
+    4: [need(W.mode, "상담 방식을 하나 골라 주세요.", "q-mode"),
+        need(W.slot, "희망 시간을 고르거나 \"따로 정할게요\"를 골라 주세요.", "q-slot")],
+  }[W.step] || [];
+  return checks.find(Boolean);
+}
+
+$("#wz-prev").onclick = () => { if (W.step > 1) { W.step--; renderWizard(); } };
+$("#wz-next").onclick = async () => {
+  if (W.step === WZ_STEPS.length) return submitWizard();
+  const miss = wzCheck();
+  if (miss) {
+    $("#wz-msg").textContent = miss.msg;
+    const g = document.getElementById(miss.gid);
+    if (g) { g.classList.add("missing"); g.scrollIntoView({ behavior: "smooth", block: "center" }); g.querySelector("input")?.focus({ preventScroll: true }); }
+    return;
+  }
+  W.step++;
+  renderWizard();
+};
+
+async function submitWizard() {
+  if (W.submitting) return; // 두 번 누름 방지
+  W.submitting = true;
+  const btn = $("#wz-next");
+  btn.disabled = true;
+  btn.textContent = "신청하는 중…";
+  const real = realConcerns();
+  const row = {
+    student_id: me.id,
+    client_token: W.token, // 같은 신청이 두 번 저장되지 않게 하는 표
+    area_id: W.area,
+    concern_ids: W.concerns,
+    first_concern_id: real.length >= 2 ? W.first : real[0] || null,
+    other_concern: W.concerns.includes("common.other") ? W.otherText.trim() || null : null,
+    since_id: W.since,
+    impact_id: W.impact,
+    help_ids: W.help,
+    mode_id: W.mode,
+    slot_id: W.slot === "later" ? null : Number(W.slot),
+    concern: W.extra.trim() || null,
+    mode: "대면", topic: "잘 모르겠어요", // 서버가 선택한 ID에 맞게 다시 채운다
+  };
+  const { error } = await sb.from("cs_requests").insert(row);
+  W.submitting = false;
+  if (error && !/client_token/.test(error.message)) {
+    btn.disabled = false;
+    btn.textContent = "상담 신청하기";
+    if (/cs_one_active_request_per_slot/.test(error.message)) {
+      const { data: slots } = await sb.rpc("cs_available_slots");
+      SLOTS = slots || [];
+      W.slot = null;
+      W.step = 4;
+      renderWizard();
+      $("#wz-msg").textContent = "방금 다른 학생이 그 시간을 신청했어요. 다른 시간을 골라 주세요. 나머지 답은 그대로 남아 있어요.";
+    } else {
+      $("#wz-msg").textContent = "신청을 저장하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요. 고른 내용은 그대로 남아 있어요.";
+    }
+    return;
+  }
+  // 저장 성공(또는 이미 저장된 같은 신청)일 때만 완료 화면
+  W.done = { slot: W.slot === "later" ? "" : slotLabel(W.slot), area: LBL[W.area], mode: LBL[W.mode] };
+  W.step = WZ_STEPS.length + 1;
+  renderWizard();
+  loadMyRequests();
+  const { data: slots } = await sb.rpc("cs_available_slots");
+  SLOTS = slots || [];
+}
+
+const STATUS_LABEL = { 대기: "확정 대기", 확정: "확정", 완료: "상담 완료", 취소: "취소" };
 async function loadMyRequests() {
   const { data, error } = await sb.from("cs_requests").select("*, slots:cs_slots(starts_at, duration_min)").order("created_at", { ascending: false });
   const box = $("#my-requests");
-  if (error) return (box.textContent = error.message);
+  if (error) return (box.textContent = "신청 내역을 불러오지 못했어요.");
   if (!data.length) return (box.innerHTML = `<p class="hint">아직 신청한 상담이 없습니다.</p>`);
-  box.innerHTML = data.map((r) => `
-    <div class="item">
+  box.innerHTML = data.map((r) => {
+    const first = r.first_concern_id && r.first_concern_id !== "first.later" ? LBL[r.first_concern_id] : "";
+    return `<div class="item">
       <div class="row between">
-        <b>${r.slots ? fmt(r.slots.starts_at) : "시간 미정"} · ${esc(r.mode)} · ${esc(r.topic)}</b>
-        <span class="badge s-${esc(r.status)}">${esc(r.status)}</span>
+        <b>${esc(LBL[r.area_id] || r.topic)}${first ? ` · ${esc(first)}` : ""}</b>
+        <span class="badge s-${esc(r.status)}">${esc(STATUS_LABEL[r.status] || r.status)}</span>
       </div>
-      ${r.public_summary ? `<p class="summary"><b>교수님 상담 요약·과제</b><br />${esc(r.public_summary)}</p>` : ""}
+      <p class="hint">${r.slots ? `희망 시간 ${fmt(r.slots.starts_at)}${r.status === "대기" ? " (확정 전)" : ""}` : "시간은 교수님과 정하기로 했어요"} · ${esc(LBL[r.mode_id] || r.mode)}</p>
+      ${r.public_summary ? `<p class="summary"><b>교수님 상담 요약</b><br />${esc(r.public_summary)}</p>` : ""}
       ${r.status === "대기" ? `<button class="small" data-cancel="${r.id}">신청 취소</button>` : ""}
-    </div>`).join("");
+    </div>`;
+  }).join("");
   $$("[data-cancel]", box).forEach((b) => (b.onclick = async () => {
     if (!confirm("이 신청을 취소할까요?")) return;
     const { error } = await sb.from("cs_requests").update({ status: "취소" }).eq("id", b.dataset.cancel);
-    if (error) alert(error.message);
-    loadStudent();
+    if (error) alert("취소하지 못했어요. 다시 시도해 주세요.");
+    loadMyRequests();
   }));
 }
 
@@ -355,6 +683,9 @@ async function loadAdmin(pane) {
   $$("#view-admin .tab").forEach((x) => x.classList.toggle("active", x.dataset.admin === pane));
   $$(".adminpane").forEach((p) => show(p, p.id === `admin-${pane}`));
   await refreshClassMap();
+  if ($("#area-filter").options.length < 2) {
+    $("#area-filter").insertAdjacentHTML("beforeend", itemsOf("area").map((a) => `<option value="${a.id}">${esc(a.label)}</option>`).join(""));
+  }
   ({ dashboard: loadDashboard, requests: loadRequests, slots: loadSlots, students: loadStudents, followup: loadFollowup, questions: loadQuestions, roster: loadRoster })[pane]();
 }
 
@@ -366,6 +697,30 @@ function semesterStart() {
   return { start: `${y - 1}-09-01`, label: `${y - 1}년 2학기·겨울방학` };
 }
 
+// 신청별 응답 요약 (ID → 문구)
+function answerSummaryHTML(r) {
+  if (!r.area_id) { // 예전 형식 신청
+    return `<dl><dt>요즘 고민</dt><dd>${esc(r.concern) || "-"}</dd>${r.wish ? `<dt>바라는 점</dt><dd>${esc(r.wish)}</dd>` : ""}</dl>`;
+  }
+  const ids = r.concern_ids || [];
+  const real = ids.filter((c) => !c.startsWith("common."));
+  const areas = [r.area_id, ...itemsOf("area").map((a) => a.id).filter((a) => a !== r.area_id)];
+  const groups = areas.map((a) => [a, real.filter((c) => areaOf(c) === a)]).filter(([, l]) => l.length);
+  const first = r.first_concern_id;
+  return `<dl class="answers">
+    <dt>선택한 고민</dt><dd>${groups.map(([a, l]) => `<div class="ans-group"><span class="badge topic">${esc(LBL[a])}</span>
+        ${l.map((id) => `<span class="ans-chip ${id === first ? "first" : ""}">${id === first ? "★ " : ""}${esc(LBL[id] || id)}</span>`).join("")}</div>`).join("") || "-"}
+      ${ids.includes("common.other") ? `<div>여기에 없는 고민: ${r.other_concern ? esc(r.other_concern) : "<span class='hint'>(적지 않음)</span>"}</div>` : ""}
+      ${ids.includes("common.later") ? `<div class="hint">자세한 이야기는 상담 때 하기로 했어요</div>` : ""}</dd>
+    <dt>먼저 이야기할 고민</dt><dd>${first ? esc(LBL[first] || first) : "-"}</dd>
+    <dt>시작된 때</dt><dd>${esc(LBL[r.since_id] || "-")}</dd>
+    <dt>일상·공부 영향</dt><dd>${esc(LBL[r.impact_id] || "-")}</dd>
+    <dt>원하는 도움</dt><dd>${(r.help_ids || []).map((h) => esc(LBL[h] || h)).join(", ") || "-"}</dd>
+    <dt>상담 방식</dt><dd>${esc(LBL[r.mode_id] || r.mode)}</dd>
+    <dt>추가 이야기</dt><dd>${esc(r.concern) || "-"}</dd>
+  </dl>`;
+}
+const textFlagHTML = `<p class="crisis-tag">학생이 직접 쓴 글에 도움이 필요할 수 있는 표현이 있어요. 글을 먼저 읽어 보고 필요하면 상담 일정과 관계없이 연락해 주세요.</p>`;
 const worryBadge = (w) => (w ? `<span class="badge ${w >= 5 ? "w-5" : w >= 4 ? "w-4" : ""}">고민 ${w}/5</span>` : "");
 
 // 대시보드
@@ -380,8 +735,7 @@ async function loadDashboard() {
   ]);
   const open = (reqs || []).filter((r) => inClass(r.profiles?.student_no));
   const studentsIn = (students || []).filter((s) => inClass(s.student_no));
-  const alerts = open.filter((r) => r.crisis_flag || (r.worry_level || 0) >= 4)
-    .sort((a, b) => (b.crisis_flag - a.crisis_flag) || ((b.worry_level || 0) - (a.worry_level || 0)));
+  const alerts = open.filter((r) => r.crisis_flag);
   const upcoming = open.filter((r) => r.slots && new Date(r.slots.starts_at) >= now && new Date(r.slots.starts_at) <= week)
     .sort((a, b) => new Date(a.slots.starts_at) - new Date(b.slots.starts_at));
   const semCnt = {};
@@ -393,7 +747,7 @@ async function loadDashboard() {
 
   $("#dash-stats").innerHTML = [
     ["확정 대기 신청", pending, "requests"],
-    ["주의 학생", alerts.length, "requests", alerts.length ? "warn" : ""],
+    ["글 먼저 확인", alerts.length, "requests", alerts.length ? "warn" : ""],
     ["7일 내 상담", upcoming.length, "slots"],
     ["답변 안 한 질문", qCount || 0, "questions"],
     [`의무 ${REQUIRED}회 완료 학생`, `${doneN}/${studentsIn.length}`, "students"],
@@ -401,16 +755,17 @@ async function loadDashboard() {
   $$("[data-go]").forEach((b) => (b.onclick = () => loadAdmin(b.dataset.go)));
 
   $("#dash-alerts").innerHTML = alerts.length ? alerts.map((r) => `
-    <div class="item ${r.crisis_flag ? "flag" : "attn"}">
+    <div class="item flag">
       <div class="row between"><b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)}) ${classTag(r.profiles?.student_no)}</b>
-        <span>${worryBadge(r.worry_level)}<span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span></div>
-      ${r.crisis_flag ? `<p class="crisis-tag">⚠ 위기 신호가 있습니다. 상담 일정과 관계없이 먼저 연락해 주세요.</p>` : ""}
-      <p>${esc(r.topic)} · ${r.slots ? fmt(r.slots.starts_at) : "시간 미정"}</p>
-      <p class="hint">${esc(r.concern) || "-"}</p>
-    </div>`).join("") : `<p class="hint">지금 주의가 필요한 신청이 없습니다.</p>`;
+        <span class="badge s-${esc(r.status)}">${esc(r.status)}</span></div>
+      ${textFlagHTML}
+      <p>${esc(LBL[r.area_id] || r.topic)} · ${r.slots ? fmt(r.slots.starts_at) : "시간 미정"}</p>
+      ${r.other_concern ? `<p class="hint">여기에 없는 고민: ${esc(r.other_concern)}</p>` : ""}
+      ${r.concern ? `<p class="hint">추가 이야기: ${esc(r.concern)}</p>` : ""}
+    </div>`).join("") : `<p class="hint">지금 먼저 확인할 글이 없습니다.</p>`;
 
   $("#dash-week").innerHTML = upcoming.length ? `<table><tbody>${upcoming.map((r) => `
-    <tr><td>${fmt(r.slots.starts_at)}</td><td>${esc(r.profiles?.name)} ${classTag(r.profiles?.student_no)}</td><td>${esc(r.mode)} · ${esc(r.topic)}</td>
+    <tr><td>${fmt(r.slots.starts_at)}</td><td>${esc(r.profiles?.name)} ${classTag(r.profiles?.student_no)}</td><td>${esc(r.mode)} · ${esc(LBL[r.area_id] || r.topic)}</td>
     <td><span class="badge s-${esc(r.status)}">${esc(r.status)}</span></td></tr>`).join("")}</tbody></table>`
     : `<p class="hint">앞으로 7일 안에 잡힌 상담이 없습니다.</p>`;
 
@@ -421,6 +776,7 @@ async function loadDashboard() {
 }
 
 $("#status-filter").onchange = () => loadRequests();
+$("#area-filter").onchange = () => loadRequests();
 
 async function loadRequests() {
   const status = $("#status-filter").value;
@@ -429,22 +785,19 @@ async function loadRequests() {
   const { data: all, error } = await q;
   const box = $("#request-list");
   if (error) return (box.textContent = error.message);
-  const data = all.filter((r) => inClass(r.profiles?.student_no));
+  const area = $("#area-filter").value;
+  const data = all.filter((r) => inClass(r.profiles?.student_no))
+    .filter((r) => !area || r.area_id === area || (r.concern_ids || []).some((c) => areaOf(c) === area));
   if (!data.length) return (box.innerHTML = `<p class="hint">해당하는 신청이 없습니다.</p>`);
   box.innerHTML = data.map((r) => `
-    <div class="item ${r.crisis_flag ? "flag" : (r.worry_level || 0) >= 4 ? "attn" : ""}">
+    <div class="item ${r.crisis_flag ? "flag" : ""}">
       <div class="row between">
         <b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)}) ${classTag(r.profiles?.student_no)}</b>
-        <span>${worryBadge(r.worry_level)}<span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span>
+        <span><span class="badge topic">${esc(LBL[r.area_id] || r.topic)}</span><span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span>
       </div>
-      ${r.crisis_flag ? `<p class="crisis-tag">⚠ 위기 신호가 있습니다. 먼저 연락해 주세요.</p>` : ""}
-      <p>${r.slots ? fmt(r.slots.starts_at) + ` (${r.slots.duration_min}분)` : "시간 미정"} · ${esc(r.mode)} · ${esc(r.topic)}</p>
-      <dl>
-        <dt>요즘 고민</dt><dd>${esc(r.concern) || "-"}</dd>
-        <dt>고민 크기</dt><dd>${r.worry_level ?? "-"} / 5</dd>
-        <dt>학교생활 만족도</dt><dd>${r.satisfaction ?? "-"} / 5</dd>
-        <dt>바라는 점</dt><dd>${esc(r.wish) || "-"}</dd>
-      </dl>
+      ${r.crisis_flag ? textFlagHTML : ""}
+      <p>${r.slots ? fmt(r.slots.starts_at) + ` (${r.slots.duration_min}분)` : "시간 협의 필요"} · 신청 ${new Date(r.created_at).toLocaleDateString("ko-KR")}</p>
+      ${answerSummaryHTML(r)}
       <div class="row end">
         ${r.status === "대기" ? `<button class="small primary" data-act="확정" data-id="${r.id}">확정</button>` : ""}
         ${["대기", "확정"].includes(r.status) ? `<button class="small" data-act="취소" data-id="${r.id}">취소</button>` : ""}
@@ -481,7 +834,8 @@ function openNote(r, student) {
   const f = $("#form-note");
   f.reset();
   f.counsel_date.value = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
-  const topic = TOPICS.includes(r?.topic) ? r.topic : "기타";
+  f.topic.innerHTML = TOPICS.map((t) => `<option>${t}</option>`).join("");
+  const topic = TOPICS.includes(r?.topic) ? r.topic : "잘 모르겠어요";
   f.topic.value = topic;
   renderFbFields([topic]);
   const s = noteCtx.student;
@@ -596,7 +950,7 @@ async function showHistory(s) {
   const sem = semesterStart();
   const [{ data }, { data: reqs }, { data: fbs }] = await Promise.all([
     sb.from("cs_notes").select("*").eq("student_id", s.id).order("counsel_date", { ascending: false }),
-    sb.from("cs_requests").select("created_at, topic, concern, worry_level, crisis_flag").eq("student_id", s.id).order("created_at", { ascending: false }),
+    sb.from("cs_requests").select("*").eq("student_id", s.id).order("created_at", { ascending: false }),
     sb.from("cs_feedback").select("*").eq("student_id", s.id).order("created_at", { ascending: false }),
   ]);
   const fbByNote = {};
@@ -609,8 +963,9 @@ async function showHistory(s) {
     <p class="hint">${sem.label} 상담 <b class="cnt ${semN >= REQUIRED ? "ok" : "c" + semN}">${semN}/${REQUIRED}회</b> · 개인정보 동의: ${s.consent_at ? new Date(s.consent_at).toLocaleDateString("ko-KR") : "아직 안 함"}</p>
     <h3>상담 일지와 보낸 피드백</h3>` +
     (data?.length ? data.map((n) => noteHTML(n, fbByNote[n.id] || [])).join("") : `<p class="hint">상담 일지가 없습니다.</p>`) +
-    `<h3>사전 질문지 응답</h3>` +
-    (reqs?.length ? reqs.map((r) => `<div class="item ${r.crisis_flag ? "flag" : ""}"><b>${new Date(r.created_at).toLocaleDateString("ko-KR")} · ${esc(r.topic)}</b> ${worryBadge(r.worry_level)}<p>${esc(r.concern) || "-"}</p></div>`).join("") : `<p class="hint">응답이 없습니다.</p>`);
+    `<h3>상담 신청 때 고른 응답</h3>` +
+    (reqs?.length ? reqs.map((r) => `<div class="item ${r.crisis_flag ? "flag" : ""}"><b>${new Date(r.created_at).toLocaleDateString("ko-KR")} · ${esc(LBL[r.area_id] || r.topic)}</b> <span class="badge s-${esc(r.status)}">${esc(r.status)}</span>
+      ${r.crisis_flag ? textFlagHTML : ""}${answerSummaryHTML(r)}</div>`).join("") : `<p class="hint">응답이 없습니다.</p>`);
   $("#add-note").onclick = () => openNote(null, s);
   $$("[data-fbdel]", box).forEach((b) => (b.onclick = async () => {
     if (!confirm("이 피드백을 삭제할까요? 학생 화면에서도 사라집니다.")) return;
@@ -651,7 +1006,7 @@ $("#export-summary").onclick = async () => {
     sb.from("cs_profiles").select("id, name, student_no").eq("role", "student").order("student_no"),
     sb.from("cs_notes").select("student_id, counsel_date, topic"),
   ]);
-  const topicOf = (t) => (TOPICS.includes(t) ? t : "기타");
+  const topicOf = (t) => (TOPICS.includes(t) ? t : "잘 모르겠어요");
   const rows = [["반", "학번", "이름", `${sem.label} 상담`, `의무 ${REQUIRED}회 충족`, "전체 상담", ...TOPICS.map((t) => `${t}(전체)`)]];
   (students || []).filter((s) => inClass(s.student_no)).forEach((s) => {
     const mine = (notes || []).filter((n) => n.student_id === s.id);

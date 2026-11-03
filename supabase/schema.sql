@@ -330,3 +330,174 @@ revoke all on function public.cs_my_counsel_count(date) from public, anon;
 grant execute on function public.cs_my_counsel_count(date) to authenticated;
 
 alter publication supabase_realtime add table public.cs_feedback;
+
+-- ============================================================
+-- 2026-11-03: 단계별 선택형 상담 신청 (분야 → 고민 → 상담 준비하기 → 방식·시간 → 확인)
+-- 화면 문구와 별개로 항목마다 고유 ID를 두고, 서버에서 ID를 검증한다.
+-- ============================================================
+create table if not exists public.cs_items (
+  id text primary key,
+  kind text not null check (kind in ('area','concern','common','first','since','impact','help','mode')),
+  area_id text,
+  label text not null,
+  hint text,
+  icon text,
+  sort int not null default 0,
+  active boolean not null default true
+);
+alter table public.cs_items enable row level security;
+create policy cs_items_read on public.cs_items for select to anon, authenticated using (true);
+create policy cs_items_admin_all on public.cs_items for all to authenticated
+  using (public.cs_is_admin()) with check (public.cs_is_admin());
+
+insert into public.cs_items(id, kind, area_id, label, hint, icon, sort) values
+ ('study','area',null,'공부·성적','공부 방법, 시험, 성적 고민','📚',1),
+ ('career','area',null,'진로·취업','하고 싶은 일, 전공, 취업 준비','🧭',2),
+ ('school','area',null,'학교생활','적응, 출석, 실습, 휴학 고민','🏫',3),
+ ('relation','area',null,'친구·대인관계','친구, 선후배, 가족, 연애','🤝',4),
+ ('mind','area',null,'마음·스트레스','스트레스, 불안, 의욕, 잠','💬',5),
+ ('life','area',null,'경제·생활','등록금, 장학금, 아르바이트, 자취','🏠',6),
+ ('unsure','area',null,'잘 모르겠어요','무엇부터 말할지 몰라도 괜찮아요','❔',7),
+ ('study.focus','concern','study','공부에 집중하기 어려워요',null,null,1),
+ ('study.method','concern','study','어떻게 공부해야 할지 모르겠어요',null,null,2),
+ ('study.exam','concern','study','시험이 부담돼요',null,null,3),
+ ('study.grade','concern','study','성적이 기대보다 낮아요',null,null,4),
+ ('study.practice','concern','study','과제나 실습을 따라가기 어려워요',null,null,5),
+ ('study.fit','concern','study','전공 공부가 저와 맞는지 고민돼요',null,null,6),
+ ('career.unknown','concern','career','무엇을 하고 싶은지 모르겠어요',null,null,1),
+ ('career.job','concern','career','제게 맞는 직업을 찾고 싶어요',null,null,2),
+ ('career.major','concern','career','전공을 계속할지 고민돼요',null,null,3),
+ ('career.start','concern','career','취업 준비를 어떻게 시작할지 모르겠어요',null,null,4),
+ ('career.cert','concern','career','자격증 준비가 고민돼요',null,null,5),
+ ('career.resume','concern','career','이력서나 면접 준비에 도움이 필요해요',null,null,6),
+ ('school.adapt','concern','school','학교에 적응하기 어려워요',null,null,1),
+ ('school.burden','concern','school','학교에 가는 것이 부담스러워요',null,null,2),
+ ('school.attend','concern','school','출석이나 시간 관리가 어려워요',null,null,3),
+ ('school.clinical','concern','school','실습 생활이 걱정돼요',null,null,4),
+ ('school.leave','concern','school','휴학이나 복학을 고민하고 있어요',null,null,5),
+ ('school.continue','concern','school','학업을 계속할지 고민돼요',null,null,6),
+ ('relation.make','concern','relation','친구를 사귀기 어려워요',null,null,1),
+ ('relation.conflict','concern','relation','친구와 갈등이 있어요',null,null,2),
+ ('relation.seniors','concern','relation','선후배와 지내기 어려워요',null,null,3),
+ ('relation.professor','concern','relation','교수님과 이야기하기 어려워요',null,null,4),
+ ('relation.family','concern','relation','가족과 갈등이 있어요',null,null,5),
+ ('relation.dating','concern','relation','연애 관계로 고민하고 있어요',null,null,6),
+ ('mind.stress','concern','mind','요즘 스트레스가 많아요',null,null,1),
+ ('mind.anxiety','concern','mind','걱정이 많고 불안해요',null,null,2),
+ ('mind.mood','concern','mind','기분이 가라앉거나 의욕이 없어요',null,null,3),
+ ('mind.confidence','concern','mind','자신감이 떨어졌어요',null,null,4),
+ ('mind.emotion','concern','mind','감정을 조절하기 어려워요',null,null,5),
+ ('mind.sleep','concern','mind','잠이나 생활 리듬이 흐트러졌어요',null,null,6),
+ ('life.tuition','concern','life','등록금이나 생활비가 부담돼요',null,null,1),
+ ('life.scholarship','concern','life','장학금이나 지원제도를 알고 싶어요',null,null,2),
+ ('life.parttime','concern','life','아르바이트와 공부를 병행하기 어려워요',null,null,3),
+ ('life.housing','concern','life','기숙사나 자취 생활이 고민돼요',null,null,4),
+ ('life.commute','concern','life','통학이 힘들어요',null,null,5),
+ ('life.health','concern','life','건강이나 생활습관이 고민돼요',null,null,6),
+ ('unsure.mixed','concern','unsure','여러 고민이 섞여 있어요',null,null,1),
+ ('unsure.explain','concern','unsure','무엇이 힘든지 설명하기 어려워요',null,null,2),
+ ('unsure.listen','concern','unsure','누군가 제 이야기를 들어줬으면 해요',null,null,3),
+ ('unsure.organize','concern','unsure','상담하면서 함께 정리하고 싶어요',null,null,4),
+ ('common.other','common',null,'여기에 없는 고민이 있어요',null,null,1),
+ ('common.later','common',null,'자세한 이야기는 상담 때 할게요',null,null,2),
+ ('first.later','first',null,'상담하면서 정할게요',null,null,1),
+ ('since.1w','since',null,'최근 1주 이내',null,null,1),
+ ('since.1m','since',null,'1개월 이내',null,null,2),
+ ('since.3m','since',null,'3개월 이내',null,null,3),
+ ('since.over3m','since',null,'3개월 이상',null,null,4),
+ ('since.unsure','since',null,'잘 모르겠어요',null,null,5),
+ ('since.later','since',null,'상담 때 이야기할게요',null,null,6),
+ ('impact.none','impact',null,'거의 영향이 없어요',null,null,1),
+ ('impact.little','impact',null,'조금 영향을 줘요',null,null,2),
+ ('impact.some','impact',null,'어느 정도 영향을 줘요',null,null,3),
+ ('impact.much','impact',null,'많이 영향을 줘요',null,null,4),
+ ('impact.very','impact',null,'매우 많이 영향을 줘요',null,null,5),
+ ('impact.later','impact',null,'상담 때 이야기할게요',null,null,6),
+ ('help.listen','help',null,'제 이야기를 들어주셨으면 해요',null,null,1),
+ ('help.organize','help',null,'고민을 함께 정리하고 싶어요',null,null,2),
+ ('help.solve','help',null,'해결 방법을 함께 찾고 싶어요',null,null,3),
+ ('help.info','help',null,'필요한 정보나 지원을 알고 싶어요',null,null,4),
+ ('help.unsure','help',null,'아직 잘 모르겠어요',null,null,5),
+ ('mode.offline','mode',null,'만나서 이야기하고 싶어요','대면',null,1),
+ ('mode.online','mode',null,'비대면으로 이야기하고 싶어요','온라인',null,2),
+ ('mode.either','mode',null,'어느 쪽이든 괜찮아요','어느 쪽이든',null,3)
+on conflict (id) do update set kind=excluded.kind, area_id=excluded.area_id, label=excluded.label, hint=excluded.hint, icon=excluded.icon, sort=excluded.sort;
+
+alter table public.cs_requests
+  add column if not exists area_id text references public.cs_items(id),
+  add column if not exists concern_ids text[] not null default '{}',
+  add column if not exists first_concern_id text,
+  add column if not exists other_concern text check (char_length(other_concern) <= 500),
+  add column if not exists since_id text references public.cs_items(id),
+  add column if not exists impact_id text references public.cs_items(id),
+  add column if not exists help_ids text[] not null default '{}',
+  add column if not exists mode_id text references public.cs_items(id),
+  add column if not exists client_token uuid unique;   -- 같은 신청이 두 번 저장되지 않게
+alter table public.cs_requests add constraint cs_requests_concern_len check (char_length(concern) <= 2000);
+alter table public.cs_requests drop constraint if exists cs_requests_mode_check;
+alter table public.cs_requests add constraint cs_requests_mode_check check (mode in ('대면','온라인','어느 쪽이든'));
+alter table public.cs_requests drop constraint if exists cs_requests_topic_check;
+alter table public.cs_requests add constraint cs_requests_topic_check check (topic = any (array[
+ '공부·성적','진로·취업','학교생활','친구·대인관계','마음·스트레스','경제·생활','잘 모르겠어요',
+ '취업','학업','진로','교우관계','기타','학교생활 적응','학업·성적','진로·국가고시','대인관계','경제·장학','건강·심리']));
+
+-- 서버 검증: ID가 사전에 있고 종류가 맞는지 확인, 표시용 topic/mode는 서버가 채운다.
+-- crisis_flag는 학생이 직접 쓴 글의 표현만 보고 표시한다(선택 응답으로 위험도를 판정하지 않음).
+create or replace function public.cs_prepare_request()
+returns trigger language plpgsql set search_path = public as $function$
+declare v_bad text;
+begin
+  if not public.cs_is_admin() then
+    new.status := '대기';
+    new.public_summary := null;
+  end if;
+  if new.area_id is not null then
+    if not exists (select 1 from cs_items where id = new.area_id and kind = 'area') then
+      raise exception '알 수 없는 상담분야입니다.'; end if;
+    select string_agg(c, ',') into v_bad from unnest(new.concern_ids) c
+      where not exists (select 1 from cs_items i where i.id = c and i.kind in ('concern','common'));
+    if v_bad is not null then raise exception '알 수 없는 고민 항목입니다: %', v_bad; end if;
+    if new.first_concern_id is not null and new.first_concern_id <> 'first.later'
+       and not (new.first_concern_id = any(new.concern_ids)) then
+      raise exception '먼저 이야기할 고민은 선택한 고민 중에서 골라야 합니다.'; end if;
+    if new.since_id is not null and not exists (select 1 from cs_items where id = new.since_id and kind = 'since') then
+      raise exception '알 수 없는 응답입니다(시작 시기).'; end if;
+    if new.impact_id is not null and not exists (select 1 from cs_items where id = new.impact_id and kind = 'impact') then
+      raise exception '알 수 없는 응답입니다(영향 정도).'; end if;
+    select string_agg(h, ',') into v_bad from unnest(new.help_ids) h
+      where not exists (select 1 from cs_items i where i.id = h and i.kind = 'help');
+    if v_bad is not null then raise exception '알 수 없는 응답입니다(원하는 도움): %', v_bad; end if;
+    if new.mode_id is null or not exists (select 1 from cs_items where id = new.mode_id and kind = 'mode') then
+      raise exception '상담 방식을 골라 주세요.'; end if;
+    new.topic := (select label from cs_items where id = new.area_id);
+    new.mode := (select hint from cs_items where id = new.mode_id);
+  end if;
+  new.crisis_flag := (coalesce(new.concern,'') || ' ' || coalesce(new.other_concern,'')) ~ '(죽고\s*싶|자살|자해|사라지고\s*싶|살기\s*싫)';
+  return new;
+end;
+$function$;
+
+create or replace function public.cs_guard_request_update()
+returns trigger language plpgsql set search_path = public as $function$
+begin
+  if public.cs_is_admin() then return new; end if;
+  if old.status = '대기' and new.status = '취소'
+     and (to_jsonb(new) - 'status') = (to_jsonb(old) - 'status') then
+    return new;
+  end if;
+  raise exception '학생은 대기 중인 신청을 취소하는 것만 할 수 있습니다.';
+end;
+$function$;
+
+alter table public.cs_feedback drop constraint if exists cs_feedback_topic_check;
+alter table public.cs_feedback add constraint cs_feedback_topic_check check (topic in (
+ '공부·성적','진로·취업','학교생활','친구·대인관계','마음·스트레스','경제·생활','잘 모르겠어요',
+ '취업','학업','진로','교우관계','기타'));
+
+create or replace function public.cs_my_info()
+returns json language sql stable security definer set search_path = public as $$
+  select json_build_object('name', p.name, 'student_no', p.student_no, 'class', r.class)
+  from cs_profiles p left join cs_roster r on r.student_no = p.student_no where p.id = auth.uid();
+$$;
+revoke all on function public.cs_my_info() from public, anon;
+grant execute on function public.cs_my_info() to authenticated;
