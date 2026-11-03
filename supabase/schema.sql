@@ -283,3 +283,9 @@ create policy cs_settings_read on public.cs_settings for select to authenticated
 create policy cs_settings_admin_all on public.cs_settings for all to authenticated
   using (public.cs_is_admin()) with check (public.cs_is_admin());
 insert into public.cs_settings(key, value) values ('center_phone', '') on conflict do nothing;
+
+-- 보안 점검 보완
+alter function public.cs_prepare_request() set search_path = public;
+alter function public.cs_guard_request_update() set search_path = public;
+alter function public.cs_prepare_question() set search_path = public;
+revoke execute on function public.cs_handle_new_user() from anon, authenticated, public;
