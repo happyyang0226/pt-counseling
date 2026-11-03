@@ -212,3 +212,6 @@ begin
   return new;
 end;
 $$;
+
+-- 명단에 반(A/B) 추가
+alter table public.cs_roster add column if not exists class text check (class in ('A','B'));
