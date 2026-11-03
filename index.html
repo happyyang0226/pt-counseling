@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>물리치료학과 지도교수 상담</title>
+<link rel="stylesheet" href="style.css" />
+<script src="config.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">물리치료학과 지도교수 상담</div>
+  <div id="who" class="who"></div>
+</header>
+
+<main id="app">
+  <!-- 로그인 화면 -->
+  <section id="view-login" class="card narrow hidden">
+    <div class="tabs">
+      <button class="tab active" data-tab="student-login">학생 로그인</button>
+      <button class="tab" data-tab="student-signup">학생 가입</button>
+      <button class="tab" data-tab="admin-login">교수</button>
+    </div>
+
+    <form id="form-student-login" class="tabpane">
+      <label>학번<input name="student_no" required inputmode="numeric" autocomplete="username" /></label>
+      <label>접속 코드<input name="code" type="password" required minlength="6" autocomplete="current-password" /></label>
+      <button class="primary" type="submit">로그인</button>
+    </form>
+
+    <form id="form-student-signup" class="tabpane hidden">
+      <label>학번<input name="student_no" required inputmode="numeric" /></label>
+      <label>이름<input name="name" required /></label>
+      <label>접속 코드 (6자 이상, 직접 정하기)<input name="code" type="password" required minlength="6" autocomplete="new-password" /></label>
+      <label>접속 코드 확인<input name="code2" type="password" required minlength="6" autocomplete="new-password" /></label>
+      <p class="hint">주민번호, 연락처 같은 정보는 받지 않습니다. 접속 코드는 잊지 않게 기억해 두세요.</p>
+      <button class="primary" type="submit">가입하기</button>
+    </form>
+
+    <form id="form-admin-login" class="tabpane hidden">
+      <label>이메일<input name="email" type="email" required autocomplete="username" /></label>
+      <label>비밀번호<input name="password" type="password" required autocomplete="current-password" /></label>
+      <button class="primary" type="submit">교수 로그인</button>
+    </form>
+    <p id="login-msg" class="msg"></p>
+  </section>
+
+  <!-- 학생 화면 -->
+  <section id="view-student" class="hidden">
+    <div class="card">
+      <h2>상담 신청</h2>
+      <form id="form-request">
+        <label>희망 날짜·시간
+          <select name="slot_id" id="slot-select" required></select>
+        </label>
+        <p id="no-slot" class="hint hidden">지금 신청할 수 있는 시간이 없습니다. 교수님이 시간을 열면 다시 확인해 주세요.</p>
+        <div class="row">
+          <label>상담 방식
+            <select name="mode" required><option>대면</option><option>온라인</option></select>
+          </label>
+          <label>상담 주제
+            <select name="topic" required>
+              <option>학업</option><option>진로</option><option>학교생활</option><option>대인관계</option><option>기타</option>
+            </select>
+          </label>
+        </div>
+        <h3>사전 질문지</h3>
+        <label>요즘 고민
+          <textarea name="concern" id="concern" rows="4" placeholder="편하게 적어 주세요."></textarea>
+        </label>
+        <div id="crisis-live" class="crisis hidden"></div>
+        <fieldset class="scale">
+          <legend>학교생활 만족도</legend>
+          <label><input type="radio" name="satisfaction" value="1" required />1</label>
+          <label><input type="radio" name="satisfaction" value="2" />2</label>
+          <label><input type="radio" name="satisfaction" value="3" />3</label>
+          <label><input type="radio" name="satisfaction" value="4" />4</label>
+          <label><input type="radio" name="satisfaction" value="5" />5</label>
+          <span class="hint">1 매우 불만족 · 5 매우 만족</span>
+        </fieldset>
+        <label>교수님께 바라는 점
+          <textarea name="wish" rows="3"></textarea>
+        </label>
+        <button class="primary" type="submit">신청하기</button>
+        <p id="request-msg" class="msg"></p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>내 상담 내역</h2>
+      <div id="my-requests"></div>
+    </div>
+  </section>
+
+  <!-- 교수 화면 -->
+  <section id="view-admin" class="hidden">
+    <nav class="tabs wide">
+      <button class="tab active" data-admin="requests">신청 목록</button>
+      <button class="tab" data-admin="slots">상담 시간</button>
+      <button class="tab" data-admin="students">학생별 이력</button>
+      <button class="tab" data-admin="followup">후속 조치</button>
+    </nav>
+
+    <div id="admin-requests" class="adminpane">
+      <div class="card">
+        <div class="row between">
+          <h2>상담 신청 목록</h2>
+          <select id="status-filter">
+            <option value="대기">대기</option><option value="확정">확정</option>
+            <option value="완료">완료</option><option value="취소">취소</option><option value="">전체</option>
+          </select>
+        </div>
+        <div id="request-list"></div>
+      </div>
+    </div>
+
+    <div id="admin-slots" class="adminpane hidden">
+      <div class="card">
+        <h2>상담 가능 시간 열기</h2>
+        <form id="form-slot" class="row wrap">
+          <label>시작 시간<input type="datetime-local" name="starts_at" required /></label>
+          <label>길이(분)<input type="number" name="duration" value="30" min="10" step="10" required /></label>
+          <label>같은 요일·시간 반복(주)<input type="number" name="repeat" value="1" min="1" max="15" /></label>
+          <button class="primary" type="submit">시간 열기</button>
+        </form>
+        <p id="slot-msg" class="msg"></p>
+      </div>
+      <div class="card">
+        <h2>앞으로의 상담 시간</h2>
+        <div id="slot-list"></div>
+      </div>
+    </div>
+
+    <div id="admin-students" class="adminpane hidden">
+      <div class="card">
+        <h2>학생별 상담 이력 <span id="semester-label" class="hint"></span></h2>
+        <div id="student-list"></div>
+      </div>
+      <div class="card hidden" id="student-detail"></div>
+    </div>
+
+    <div id="admin-followup" class="adminpane hidden">
+      <div class="card">
+        <h2>후속 조치가 필요한 학생</h2>
+        <div id="followup-list"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 상담 일지 작성 창 -->
+<dialog id="note-dialog">
+  <form id="form-note" method="dialog">
+    <h2>상담 일지 작성</h2>
+    <p id="note-student" class="hint"></p>
+    <div class="row">
+      <label>상담 날짜<input type="date" name="counsel_date" required /></label>
+      <label>주제<input name="topic" /></label>
+    </div>
+    <label>상담 내용<textarea name="content" rows="4"></textarea></label>
+    <label>교수 의견<textarea name="opinion" rows="3"></textarea></label>
+    <label class="private">교수만 보는 메모 (학생에게 보이지 않음)<textarea name="private_memo" rows="3"></textarea></label>
+    <label class="public">학생에게 공개할 요약<textarea name="public_summary" rows="3"></textarea></label>
+    <label>후속 조치<textarea name="followup" rows="2"></textarea></label>
+    <div class="row">
+      <label class="check"><input type="checkbox" name="needs_followup" /> 후속 조치 필요</label>
+      <label>다음 상담 예정일<input type="date" name="next_date" /></label>
+    </div>
+    <div class="row end">
+      <button type="button" id="note-cancel">닫기</button>
+      <button class="primary" type="submit" value="save">저장하고 완료 처리</button>
+    </div>
+    <p id="note-msg" class="msg"></p>
+  </form>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
