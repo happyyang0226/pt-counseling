@@ -26,7 +26,7 @@ let me = null; // profiles 행
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return showLogin();
-  const { data, error } = await sb.from("profiles").select("*").eq("id", session.user.id).single();
+  const { data, error } = await sb.from("cs_profiles").select("*").eq("id", session.user.id).single();
   if (error || !data) { await sb.auth.signOut(); return showLogin("사용자 정보를 찾을 수 없습니다. 다시 로그인해 주세요."); }
   me = data;
   $("#who").innerHTML = `${esc(me.name)}${me.role === "admin" ? " 교수님" : ` (${esc(me.student_no)})`} <button id="logout" class="link">로그아웃</button>`;
@@ -66,7 +66,7 @@ $("#form-student-signup").onsubmit = async (e) => {
   const { error } = await sb.auth.signUp({
     email: studentEmail(no),
     password: f.get("code"),
-    options: { data: { student_no: no, name: String(f.get("name")).trim() } },
+    options: { data: { app: "counsel", student_no: no, name: String(f.get("name")).trim() } },
   });
   if (error) {
     const m = /registered|exists/i.test(error.message) ? "이미 가입된 학번입니다. 로그인해 주세요." : "가입 중 문제가 생겼습니다: " + error.message;
@@ -85,7 +85,7 @@ $("#form-admin-login").onsubmit = async (e) => {
 
 // ---------- 학생 화면 ----------
 async function loadStudent() {
-  const { data: slots } = await sb.rpc("available_slots");
+  const { data: slots } = await sb.rpc("cs_available_slots");
   const sel = $("#slot-select");
   sel.innerHTML = (slots || []).map((s) => `<option value="${s.id}">${fmt(s.starts_at)} (${s.duration_min}분)</option>`).join("");
   show($("#no-slot"), !slots?.length);
@@ -111,7 +111,7 @@ $("#form-request").onsubmit = async (e) => {
     satisfaction: Number(f.get("satisfaction")),
     wish: f.get("wish"),
   };
-  const { error } = await sb.from("requests").insert(row);
+  const { error } = await sb.from("cs_requests").insert(row);
   if (error) {
     $("#request-msg").textContent = /duplicate|unique/i.test(error.message)
       ? "방금 다른 학생이 그 시간을 신청했습니다. 다른 시간을 골라 주세요."
@@ -125,7 +125,7 @@ $("#form-request").onsubmit = async (e) => {
 };
 
 async function loadMyRequests() {
-  const { data, error } = await sb.from("requests").select("*, slots(starts_at, duration_min)").order("created_at", { ascending: false });
+  const { data, error } = await sb.from("cs_requests").select("*, slots:cs_slots(starts_at, duration_min)").order("created_at", { ascending: false });
   const box = $("#my-requests");
   if (error) return (box.textContent = error.message);
   if (!data.length) return (box.innerHTML = `<p class="hint">아직 신청한 상담이 없습니다.</p>`);
@@ -140,7 +140,7 @@ async function loadMyRequests() {
     </div>`).join("");
   $$("[data-cancel]", box).forEach((b) => (b.onclick = async () => {
     if (!confirm("이 신청을 취소할까요?")) return;
-    const { error } = await sb.from("requests").update({ status: "취소" }).eq("id", b.dataset.cancel);
+    const { error } = await sb.from("cs_requests").update({ status: "취소" }).eq("id", b.dataset.cancel);
     if (error) alert(error.message);
     loadStudent();
   }));
@@ -159,7 +159,7 @@ $("#status-filter").onchange = () => loadRequests();
 
 async function loadRequests() {
   const status = $("#status-filter").value;
-  let q = sb.from("requests").select("*, profiles(name, student_no), slots(starts_at, duration_min)").order("created_at", { ascending: false });
+  let q = sb.from("cs_requests").select("*, profiles:cs_profiles(name, student_no), slots:cs_slots(starts_at, duration_min)").order("created_at", { ascending: false });
   if (status) q = q.eq("status", status);
   const { data, error } = await q;
   const box = $("#request-list");
@@ -185,7 +185,7 @@ async function loadRequests() {
       </div>
     </div>`).join("");
   $$("[data-act]", box).forEach((b) => (b.onclick = async () => {
-    const { error } = await sb.from("requests").update({ status: b.dataset.act }).eq("id", b.dataset.id);
+    const { error } = await sb.from("cs_requests").update({ status: b.dataset.act }).eq("id", b.dataset.id);
     if (error) alert(error.message);
     loadRequests();
   }));
@@ -221,9 +221,9 @@ $("#form-note").onsubmit = async (e) => {
     needs_followup: f.get("needs_followup") === "on",
     next_date: f.get("next_date") || null,
   };
-  const { error } = await sb.from("notes").insert(note);
+  const { error } = await sb.from("cs_notes").insert(note);
   if (error) return ($("#note-msg").textContent = error.message);
-  const { error: e2 } = await sb.from("requests").update({ status: "완료", public_summary: f.get("public_summary") || null }).eq("id", noteReq.id);
+  const { error: e2 } = await sb.from("cs_requests").update({ status: "완료", public_summary: f.get("public_summary") || null }).eq("id", noteReq.id);
   if (e2) return ($("#note-msg").textContent = e2.message);
   $("#note-dialog").close();
   loadRequests();
@@ -239,14 +239,14 @@ $("#form-slot").onsubmit = async (e) => {
     starts_at: new Date(start.getTime() + i * 7 * 864e5).toISOString(),
     duration_min: Number(f.get("duration")),
   }));
-  const { error } = await sb.from("slots").insert(rows);
+  const { error } = await sb.from("cs_slots").insert(rows);
   $("#slot-msg").textContent = error ? error.message : `${rows.length}개의 상담 시간을 열었습니다.`;
   loadSlots();
 };
 
 async function loadSlots() {
-  const { data, error } = await sb.from("slots")
-    .select("*, requests(status, profiles(name))")
+  const { data, error } = await sb.from("cs_slots")
+    .select("*, requests:cs_requests(status, profiles:cs_profiles(name))")
     .gte("starts_at", new Date().toISOString()).order("starts_at");
   const box = $("#slot-list");
   if (error) return (box.textContent = error.message);
@@ -263,12 +263,12 @@ async function loadSlots() {
       </span></div>`;
   }).join("");
   $$("[data-toggle]", box).forEach((b) => (b.onclick = async () => {
-    await sb.from("slots").update({ is_open: b.dataset.open !== "true" }).eq("id", b.dataset.toggle);
+    await sb.from("cs_slots").update({ is_open: b.dataset.open !== "true" }).eq("id", b.dataset.toggle);
     loadSlots();
   }));
   $$("[data-del]", box).forEach((b) => (b.onclick = async () => {
     if (!confirm("이 시간을 삭제할까요?")) return;
-    await sb.from("slots").delete().eq("id", b.dataset.del);
+    await sb.from("cs_slots").delete().eq("id", b.dataset.del);
     loadSlots();
   }));
 }
@@ -286,8 +286,8 @@ async function loadStudents() {
   const sem = semesterStart();
   $("#semester-label").textContent = `(${sem.label} 상담 횟수)`;
   const [{ data: students }, { data: notes }] = await Promise.all([
-    sb.from("profiles").select("*").eq("role", "student").order("student_no"),
-    sb.from("notes").select("student_id, counsel_date"),
+    sb.from("cs_profiles").select("*").eq("role", "student").order("student_no"),
+    sb.from("cs_notes").select("student_id, counsel_date"),
   ]);
   const count = {}, total = {};
   (notes || []).forEach((n) => {
@@ -304,7 +304,7 @@ async function loadStudents() {
 }
 
 async function showHistory(s) {
-  const { data } = await sb.from("notes").select("*").eq("student_id", s.id).order("counsel_date", { ascending: false });
+  const { data } = await sb.from("cs_notes").select("*").eq("student_id", s.id).order("counsel_date", { ascending: false });
   const box = $("#student-detail");
   show(box);
   box.innerHTML = `<h2>${esc(s.name)} (${esc(s.student_no)}) 상담 이력</h2>` + (data?.length ? data.map(noteHTML).join("") : `<p class="hint">상담 일지가 없습니다.</p>`);
@@ -324,7 +324,7 @@ const noteHTML = (n) => `
 
 // 후속 조치
 async function loadFollowup() {
-  const { data, error } = await sb.from("notes").select("*, profiles(name, student_no)").eq("needs_followup", true).order("next_date", { ascending: true, nullsFirst: false });
+  const { data, error } = await sb.from("cs_notes").select("*, profiles:cs_profiles(name, student_no)").eq("needs_followup", true).order("next_date", { ascending: true, nullsFirst: false });
   const box = $("#followup-list");
   if (error) return (box.textContent = error.message);
   if (!data.length) return (box.innerHTML = `<p class="hint">후속 조치가 필요한 학생이 없습니다.</p>`);
@@ -338,7 +338,7 @@ async function loadFollowup() {
       <button class="small" data-done="${n.id}">조치 완료</button>
     </div>`).join("");
   $$("[data-done]", box).forEach((b) => (b.onclick = async () => {
-    await sb.from("notes").update({ needs_followup: false }).eq("id", b.dataset.done);
+    await sb.from("cs_notes").update({ needs_followup: false }).eq("id", b.dataset.done);
     loadFollowup();
   }));
 }

@@ -12,17 +12,13 @@
 
 ## 1. Supabase 설정
 
-1. supabase.com 에서 새 프로젝트를 만든다. (Region: Northeast Asia (Seoul))
-2. SQL Editor 에 `supabase/schema.sql` 전체를 붙여 넣고 Run 한다.
-3. Authentication > Sign In / Providers > Email 에서 **Confirm email 을 끈다.**
-   (학생은 학번으로 로그인하므로 이메일 확인 메일을 받을 수 없음)
-4. Authentication > Users > Add user 로 교수 계정을 만든다. (이메일·비밀번호, Auto Confirm 체크)
-5. SQL Editor 에서 교수 권한을 준다.
-   ```sql
-   update public.profiles set role = 'admin', name = '양회송'
-   where id = (select id from auth.users where email = '교수이메일');
-   ```
-6. Project Settings > API 에서 Project URL 과 anon public 키를 복사해 `config.js` 에 넣는다.
+AIDX 피드백 웹앱과 같은 Supabase 프로젝트(egwwmhmftixjmvrtivfm)를 함께 쓴다. 상담 웹앱의 표와 함수는 모두 `cs_` 로 시작하므로 다른 웹앱과 섞이지 않는다.
+
+1. `supabase/schema.sql` 은 이미 적용되어 있다. (새 프로젝트에 다시 만들 때만 SQL Editor 에서 실행)
+2. 교수 계정(ptyang@scjc.ac.kr)은 이미 관리자로 등록되어 있다.
+3. **Authentication > Sign In / Providers > Email 에서 Confirm email 을 꺼야 한다.**
+   (학생은 학번으로 가입하므로 확인 메일을 받을 수 없음)
+4. `config.js` 에는 Project URL 과 publishable 키가 들어 있다.
 
 ## 2. Vercel 배포
 
