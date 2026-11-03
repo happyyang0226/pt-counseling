@@ -1,0 +1,1 @@
+{"name":"pt-counseling","private":true,"type":"module","engines":{"node":"24.x"},"scripts":{"test":"node --test tests/*.test.mjs","build":"node --check app.js && node --check api/student-code.js","setup:professor":"node --env-file-if-exists=.env.local scripts/setup-professor.mjs"}}

@@ -56,7 +56,7 @@ function pickLanding(id) {
   const note = $("#pending-note");
   note.hidden = false;
   note.innerHTML = `<span class="pn-icon" aria-hidden="true">${a.icon}</span>
-    <span><b>선택한 분야: ${esc(a.label)}</b><br />로그인하면 바로 "고민 고르기"로 이어져요. 처음이면 "학생 가입"을 먼저 해 주세요.</span>
+    <span><b>선택한 분야: ${esc(a.label)}</b><br />로그인하면 바로 "고민 고르기"로 이어져요. 코드가 없으면 "접속 코드 요청"을 먼저 해 주세요.</span>
     <button type="button" class="link-btn" id="pending-clear">선택 취소</button>`;
   $("#pending-clear").onclick = () => { PENDING_AREA = null; note.hidden = true; markCards("#area-list-intro", null); };
   // 학생 로그인 탭으로 안내
@@ -195,27 +195,19 @@ $("#form-student-login").onsubmit = async (e) => {
   boot();
 };
 
-$("#form-student-signup").onsubmit = async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  const no = String(f.get("student_no")).trim();
-  const msg = (t) => ($("#login-msg").textContent = t);
-  if (!/^\d{4,12}$/.test(no)) return msg("학번은 숫자로 입력해 주세요.");
-  if (f.get("code") !== f.get("code2")) return msg("접속 코드가 서로 다릅니다.");
-  const { data: info, error: le } = await sb.rpc("cs_roster_lookup", { p_student_no: no });
-  if (le) return msg("학번을 확인하지 못했습니다: " + le.message);
-  if (!info?.found) return msg("1학년 명단에 없는 학번입니다. 학번을 다시 확인하거나 교수님께 문의하세요.");
-  if (info.registered) return msg("이미 가입된 학번입니다. 학생 로그인으로 들어가세요.");
-  if (!confirm(`${info.masked_name} 학생이 맞나요?\n학번 ${no}\n\n이 학번으로 가입합니다.`)) return;
-  const { error } = await sb.auth.signUp({
-    email: studentEmail(no),
-    password: f.get("code"),
-    options: { data: { app: "counsel", student_no: no } },
-  });
-  if (error) {
-    return msg(/registered|exists/i.test(error.message) ? "이미 가입된 학번입니다. 학생 로그인으로 들어가세요." : "가입 중 문제가 생겼습니다: " + error.message);
-  }
-  boot();
+async function codeApi(action,body){
+ const {data:{session}}=await sb.auth.getSession();
+ const response=await fetch('/api/student-code?action='+action,{method:body===undefined?'GET':'POST',cache:'no-store',headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(session?{Authorization:'Bearer '+session.access_token}:{})},body:body===undefined?undefined:JSON.stringify(body)});
+ const data=await response.json();if(!response.ok)throw Error(data.error||'요청을 처리하지 못했습니다.');return data;
+}
+$("#form-student-signup").onsubmit=async e=>{
+ e.preventDefault();const button=e.target.querySelector('button');if(button.disabled)return;button.disabled=true;
+ try{const result=await codeApi('request',{student_no:new FormData(e.target).get('student_no')});$('#login-msg').textContent=result.message;}catch(err){$('#login-msg').textContent=err.message;}finally{button.disabled=false;}
+};
+$('#load-code-requests').onclick=async()=>{try{const rows=await codeApi('list');$('#code-requests').textContent=rows.length?'발급 대기 학번: '+rows.map(r=>r.student_no).join(', '):'발급 대기 요청이 없습니다.';}catch(err){$('#code-requests').textContent=err.message;}};
+$('#form-issue-code').onsubmit=async e=>{
+ e.preventDefault();const button=e.target.querySelector('button');if(button.disabled)return;const f=new FormData(e.target);button.disabled=true;$('#issued-code').textContent='발급 중입니다…';
+ try{const result=await codeApi('issue',{student_no:f.get('student_no'),confirmed:f.get('confirmed')==='on'});$('#issued-code').textContent=result.student_no+' 새 접속 코드: '+result.code+' — 학생 본인에게 직접 전달하세요. 이 화면을 벗어나면 코드를 다시 볼 수 없습니다.';e.target.reset();loadRoster();}catch(err){$('#issued-code').textContent=err.message;}finally{button.disabled=false;}
 };
 
 $("#form-admin-login").onsubmit = async (e) => {
