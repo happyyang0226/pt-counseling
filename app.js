@@ -16,6 +16,33 @@ const studentEmail = (no) => `${String(no).trim()}@${CFG.STUDENT_EMAIL_DOMAIN}`;
 const CRISIS_RE = /(죽고\s*싶|자살|자해|사라지고\s*싶|살기\s*싫)/;
 const TOPICS = ["취업", "학업", "진로", "학교생활", "교우관계", "기타"];
 const REQUIRED = 3; // 한 학기 의무 상담 횟수
+
+// 상담 분야 안내 (첫 화면, 학생 화면, 신청서에 함께 쓴다)
+const AREAS = {
+  취업: { icon: "💼", text: "물리치료사로 어디에서 일하고 싶은지(병원, 재활센터, 요양기관, 스포츠·지역사회 등), 실습기관과 취업처 정보, 이력서와 면접 준비, 국가시험 이후의 계획이 궁금할 때 상담을 받을 수 있습니다." },
+  학업: { icon: "📚", text: "공부한 만큼 성적이 나오지 않거나 집중이 잘 되지 않을 때, 시험을 앞두고 불안과 긴장이 커서 힘들 때, 해부학처럼 공부할 양이 많은 과목의 학습 방법을 찾고 싶을 때 도움을 받을 수 있습니다." },
+  진로: { icon: "🧭", text: "물리치료학이 나와 맞는지 확신이 서지 않거나, 앞으로의 방향(전공심화·대학원 진학, 관심 있는 전문 분야 등)을 정하기 어려울 때 나의 적성과 흥미를 함께 살펴볼 수 있습니다." },
+  학교생활: { icon: "🏫", text: "대학 생활이나 기숙사·자취 생활에 적응하기 어려울 때, 시간 관리와 아르바이트·학업의 균형이 고민될 때, 장학금·휴학·복학 같은 학사 절차가 궁금할 때 상담을 받을 수 있습니다." },
+  교우관계: { icon: "🤝", text: "새로운 환경에서 친구를 사귀기 어렵거나, 동기·선후배와의 관계, 조별 과제와 실습에서 생긴 갈등 때문에 마음이 불편할 때 함께 이야기할 수 있습니다." },
+  기타: { icon: "💬", text: "위 분야에 딱 맞지 않는 고민도 괜찮습니다. 건강, 경제적 어려움, 가족이나 이성 관계, 성격에 대한 고민 등 무엇이든 편하게 신청하세요. 필요하면 학생상담센터 전문 상담으로 연결해 드립니다." },
+};
+const CENTER_AREAS = [
+  ["가정", "가족 사이의 갈등이나 집안에 생긴 어려운 일 때문에 마음이 힘들 때"],
+  ["이성관계", "연애 관계가 어렵고 힘들게 느껴지거나, 관계에 지나치게 매달리게 되어 괴로울 때"],
+  ["성격", "소심함이나 수줍음 때문에 생활이 불편하거나, 내 성격이 마음에 들지 않아 더 성숙해지고 싶을 때"],
+  ["성 상담", "성에 관한 궁금증이나 정체감의 혼란이 있을 때, 성폭력·성희롱으로 어려움을 겪을 때 (피해가 있었다면 학생상담센터나 전문 기관에 바로 도움을 요청하세요)"],
+];
+function renderAreas() {
+  const html = TOPICS.map((t) => `<div class="area"><div class="area-head"><span class="area-icon">${AREAS[t].icon}</span><b>${t}</b></div><p>${AREAS[t].text}</p></div>`).join("");
+  $("#area-list-intro").innerHTML = html;
+  $("#area-list-student").innerHTML = html;
+  $("#area-list-center").innerHTML = CENTER_AREAS.map(([t, d]) => `<div class="area center"><div class="area-head"><b>${t}</b></div><p>${d}</p></div>`).join("");
+  const sel = $('#form-request [name="topic"]');
+  const desc = () => ($("#topic-desc").textContent = AREAS[sel.value]?.text || "");
+  sel.addEventListener("change", desc);
+  desc();
+}
+renderAreas();
 const IDLE_MIN = 20;
 
 let me = null; // cs_profiles 행
@@ -61,6 +88,8 @@ async function boot() {
   $("#who").innerHTML = `${esc(me.name)}${me.role === "admin" ? " 교수님" : ` (${esc(me.student_no)})`} <button id="logout" class="link">로그아웃</button>`;
   $("#logout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
   show($("#view-login"), false);
+  show($("#intro-top"), false);
+  show($("#intro-areas"), false);
   if (me.role === "admin") {
     show($("#help-bar"), false);
     show($("#view-admin"));
@@ -75,6 +104,8 @@ async function boot() {
 
 function showLogin(msg = "") {
   $("#who").innerHTML = "";
+  show($("#intro-top"));
+  show($("#intro-areas"));
   show($("#view-login"));
   $("#login-msg").textContent = msg;
 }
@@ -252,6 +283,7 @@ $("#form-request").onsubmit = async (e) => {
   $("#request-msg").textContent = "신청했습니다. 교수님이 확정하면 상태가 바뀝니다.";
   const keepCrisis = CRISIS_RE.test(row.concern || "") || row.worry_level === 5;
   e.target.reset();
+  $('#form-request [name="topic"]').dispatchEvent(new Event("change"));
   show($("#crisis-live"), keepCrisis);
   loadStudent();
 };
