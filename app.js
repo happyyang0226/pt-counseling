@@ -96,7 +96,7 @@ const centerHTML = () => centerPhone
   : esc(CFG.COUNSEL_CENTER);
 
 const crisisHTML = () => `
-  <strong>혼자 견디지 않아도 됩니다.</strong><br />
+  <strong class="crisis-title">혼자 견디지 않아도 됩니다.</strong><br />
   지금 많이 힘들다면 바로 도움을 요청해 주세요.<br />
   · 자살예방상담전화 <a href="tel:109"><b>109</b></a> (24시간)<br />
   · 정신건강위기상담 <a href="tel:15770199">1577-0199</a><br />
@@ -288,7 +288,16 @@ function toast(text) {
 
 // ---------- 학생: 단계별 상담 신청 ----------
 // 응답은 메모리(W)에만 둔다. URL, localStorage, 콘솔에 남기지 않는다.
-const WZ_STEPS = ["상담분야", "고민 고르기", "상담 준비하기", "방식·시간", "신청 내용 확인"];
+const WZ_STEPS = ["상담분야", "고민 고르기", "언제부터", "일상 영향", "원하는 도움", "상담 방식", "희망 시간", "신청 확인"];
+// 보기 이모지 (분야 아이콘은 cs_items에 있음)
+const EMOJI = {
+  "since.1w": "🌱", "since.1m": "🌿", "since.3m": "🌳", "since.over3m": "⏳", "since.unsure": "🤔", "since.later": "💬",
+  "impact.none": "🙂", "impact.little": "😐", "impact.some": "😕", "impact.much": "😣", "impact.very": "😞", "impact.later": "💬",
+  "help.listen": "👂", "help.organize": "🗂️", "help.solve": "🧩", "help.info": "📚", "help.unsure": "🤔",
+  "mode.offline": "🏫", "mode.online": "💻", "mode.either": "👌",
+  "common.other": "✏️", "common.later": "💬", "first.later": "💬",
+};
+const withEmoji = (items) => items.map((i) => ({ ...i, icon: i.icon || EMOJI[i.id] || "" }));
 const newWizard = () => ({
   step: 1, area: null, concerns: [], otherText: "", moreOpen: false, moreTab: null, areaNote: null,
   first: null, since: null, impact: null, help: [], mode: null, slot: null, extra: "", entry: null,
@@ -349,7 +358,7 @@ function renderProgress() {
     return `<li class="${st}" ${n === W.step ? 'aria-current="step"' : ""}><span class="n">${n < W.step ? "✓" : n}</span><span class="t">${t}</span></li>`;
   }).join("");
   $("#wz-bar").style.width = `${(W.step / WZ_STEPS.length) * 100}%`;
-  $("#wz-count").textContent = `${W.step} / ${WZ_STEPS.length} 단계 · ${WZ_STEPS[W.step - 1]}`;
+  $("#wz-count").innerHTML = `<b>${W.step}</b> / ${WZ_STEPS.length} · ${WZ_STEPS[W.step - 1]}`;
   show($("#wz-prev"), W.step > 1);
   $("#wz-next").textContent = W.step === WZ_STEPS.length ? "상담 신청하기" : "다음";
   $("#wz-next").disabled = W.submitting;
@@ -359,7 +368,7 @@ function renderWizard(moveFocus = true) {
   $("#wz-msg").textContent = "";
   renderProgress();
   const body = $("#wz-body");
-  body.innerHTML = [null, step1, step2, step3, step4, step5, stepDone][W.step]();
+  body.innerHTML = [null, step1, step2, stepSince, stepImpact, stepHelp, stepMode, stepTime, step5, stepDone][W.step]();
   bindWizard();
   if (moveFocus) {
     const h = $(".wz-title", body);
@@ -444,23 +453,31 @@ function refreshStep2() {
   if (!had && realConcerns().length >= 2) $("#wz-first").classList.add("pop");
 }
 
-// 3단계: 상담 준비하기
-function step3() {
-  const opts = (kind) => itemsOf(kind).map((i) => ({ id: i.id, label: i.label }));
-  return `<h3 class="wz-title" tabindex="-1">상담 준비하기</h3>
-    <p class="hint">상담 전에 몇 가지만 골라 주세요. 정답은 없어요. 말하기 어려우면 "상담 때 이야기할게요"를 고르면 돼요.</p>` +
-    groupHTML({ legend: "이 고민은 언제부터 있었나요?", name: "since", items: opts("since"), selected: W.since }) +
-    groupHTML({ legend: "요즘 이 고민이 일상이나 공부에 얼마나 영향을 주나요?", name: "impact", items: opts("impact"), selected: W.impact }) +
-    groupHTML({ legend: "상담에서 어떤 도움을 받고 싶으세요?", multi: true, name: "help", items: opts("help"), selected: W.help });
+// 3~5단계: 상담 준비 (한 화면에 한 문항)
+const optsOf = (kind) => withEmoji(itemsOf(kind).map((i) => ({ id: i.id, label: i.label })));
+function stepSince() {
+  return `<h3 class="wz-title" tabindex="-1">언제부터였어요?</h3><p class="hint">정답은 없어요. 대충 떠오르는 대로 골라 주세요.</p>` +
+    groupHTML({ legend: "이 고민은 언제부터 있었나요?", name: "since", items: optsOf("since"), selected: W.since });
+}
+function stepImpact() {
+  return `<h3 class="wz-title" tabindex="-1">요즘 얼마나 신경 쓰여요?</h3>` +
+    groupHTML({ legend: "이 고민이 일상이나 공부에 얼마나 영향을 주나요?", name: "impact", items: optsOf("impact"), selected: W.impact });
+}
+function stepHelp() {
+  return `<h3 class="wz-title" tabindex="-1">어떤 도움이 필요해요?</h3>` +
+    groupHTML({ legend: "상담에서 어떤 도움을 받고 싶으세요?", multi: true, name: "help", items: optsOf("help"), selected: W.help });
 }
 
-// 4단계: 방식·시간
-function step4() {
-  const modes = itemsOf("mode").map((i) => ({ id: i.id, label: i.label }));
-  const slots = SLOTS.map((s) => ({ id: String(s.id), label: fmt(s.starts_at), sub: `${s.duration_min}분 · 교수님이 확인하면 확정돼요` }))
-    .concat([{ id: "later", label: "시간은 교수님과 따로 정할게요", sub: "교수님이 연락드려요" }]);
-  return `<h3 class="wz-title" tabindex="-1">상담 방식과 시간</h3>` +
-    groupHTML({ legend: "어떤 방식으로 상담받고 싶으세요?", name: "mode", items: modes, selected: W.mode }) +
+// 6단계: 상담 방식
+function stepMode() {
+  return `<h3 class="wz-title" tabindex="-1">어떻게 만날까요?</h3>` +
+    groupHTML({ legend: "어떤 방식으로 상담받고 싶으세요?", name: "mode", items: optsOf("mode"), selected: W.mode });
+}
+// 7단계: 희망 시간 + 하고 싶은 말
+function stepTime() {
+  const slots = SLOTS.map((s) => ({ id: String(s.id), label: fmt(s.starts_at), sub: `${s.duration_min}분 · 교수님이 확인하면 확정돼요`, icon: "🗓️" }))
+    .concat([{ id: "later", label: "시간은 교수님과 따로 정할게요", sub: "교수님이 연락드려요", icon: "📩" }]);
+  return `<h3 class="wz-title" tabindex="-1">언제가 좋아요?</h3>` +
     groupHTML({ legend: "언제 만나면 좋을까요?", name: "slot", items: slots, selected: W.slot,
       extra: SLOTS.length ? "" : `<p class="note-box">지금 열려 있는 상담 시간이 없어요. "따로 정할게요"를 고르면 교수님이 시간을 알려 드려요.</p>` }) +
     `<div class="q extra">
@@ -470,7 +487,6 @@ function step4() {
     </div>`;
 }
 
-// 5단계: 확인
 function step5() {
   const real = realConcerns();
   const groups = [W.area, ...itemsOf("area").map((a) => a.id).filter((id) => id !== W.area)]
@@ -491,11 +507,11 @@ function step5() {
       ${row("선택한 고민", concernsHTML, 2)}
       ${row("먼저 이야기할 고민", esc(first), 2)}
       ${row("고민이 시작된 때", esc(LBL[W.since]), 3)}
-      ${row("일상·공부에 주는 영향", esc(LBL[W.impact]), 3)}
-      ${row("받고 싶은 도움", W.help.map((h) => esc(LBL[h])).join(", "), 3)}
-      ${row("상담 방식", esc(LBL[W.mode]), 4)}
-      ${row("희망 시간", W.slot === "later" ? "교수님과 따로 정하기" : `${esc(slotLabel(W.slot))} <span class="badge s-대기">교수님 확정 전</span>`, 4)}
-      ${row("추가로 전한 이야기", W.extra.trim() ? esc(W.extra.trim()) : "<span class='hint'>없음</span>", 4)}
+      ${row("일상·공부에 주는 영향", esc(LBL[W.impact]), 4)}
+      ${row("받고 싶은 도움", W.help.map((h) => esc(LBL[h])).join(", "), 5)}
+      ${row("상담 방식", esc(LBL[W.mode]), 6)}
+      ${row("희망 시간", W.slot === "later" ? "교수님과 따로 정하기" : `${esc(slotLabel(W.slot))} <span class="badge s-대기">교수님 확정 전</span>`, 7)}
+      ${row("추가로 전한 이야기", W.extra.trim() ? esc(W.extra.trim()) : "<span class='hint'>없음</span>", 7)}
     </dl>`;
 }
 
@@ -586,6 +602,10 @@ function onPick(inp) {
   else if (name === "mode") W.mode = value;
   else if (name === "slot") W.slot = value;
   $("#wz-msg").textContent = "";
+  if (["since", "impact", "mode"].includes(name) && !W.submitting) {
+    clearTimeout(onPick.t);
+    onPick.t = setTimeout(() => { if (WZ_STEPS[W.step - 1] && !wzCheck()) { W.step++; renderWizard(); } }, 320);
+  }
 }
 
 // ---------- 교수: 학생 화면 미리보기 (저장 안 함) ----------
@@ -621,11 +641,11 @@ function wzCheck() {
     1: [need(W.area, "상담분야를 하나 골라 주세요. 잘 모르겠으면 \"잘 모르겠어요\"를 골라도 돼요.", "q-area")],
     2: [need(W.concerns.length, "고민을 하나 이상 고르거나, \"자세한 이야기는 상담 때 할게요\"를 눌러 주세요.", "q-concern"),
         need(realConcerns().length < 2 || W.first, "먼저 이야기하고 싶은 고민을 하나 골라 주세요. 정하기 어려우면 \"상담하면서 정할게요\"를 고르면 돼요.", "q-first")],
-    3: [need(W.since, "고민이 언제부터 있었는지 하나 골라 주세요.", "q-since"),
-        need(W.impact, "고민이 주는 영향을 하나 골라 주세요.", "q-impact"),
-        need(W.help.length, "받고 싶은 도움을 하나 이상 골라 주세요.", "q-help")],
-    4: [need(W.mode, "상담 방식을 하나 골라 주세요.", "q-mode"),
-        need(W.slot, "희망 시간을 고르거나 \"따로 정할게요\"를 골라 주세요.", "q-slot")],
+    3: [need(W.since, "고민이 언제부터 있었는지 하나 골라 주세요.", "q-since")],
+    4: [need(W.impact, "고민이 주는 영향을 하나 골라 주세요.", "q-impact")],
+    5: [need(W.help.length, "받고 싶은 도움을 하나 이상 골라 주세요.", "q-help")],
+    6: [need(W.mode, "상담 방식을 하나 골라 주세요.", "q-mode")],
+    7: [need(W.slot, "희망 시간을 고르거나 \"따로 정할게요\"를 골라 주세요.", "q-slot")],
   }[W.step] || [];
   return checks.find(Boolean);
 }
@@ -683,7 +703,7 @@ async function submitWizard() {
       const { data: slots } = await sb.rpc("cs_available_slots");
       SLOTS = slots || [];
       W.slot = null;
-      W.step = 4;
+      W.step = 7;
       renderWizard();
       $("#wz-msg").textContent = "방금 다른 학생이 그 시간을 신청했어요. 다른 시간을 골라 주세요. 나머지 답은 그대로 남아 있어요.";
     } else {
@@ -1368,6 +1388,21 @@ $("#purge-btn").onclick = async () => {
   $("#roster-msg").textContent = error ? "삭제하지 못했습니다: " + error.message : `${picked.length}명을 명단에서 지웠습니다 (가입 계정과 상담 기록 ${n}명분 포함).`;
   await refreshClassMap();
   loadRoster();
+};
+
+// 밝은/어두운 화면 (기기 설정을 따르고, 버튼으로 바꾼 값만 이 브라우저에 기억)
+function applyTheme(t) {
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  const dark = t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  $("#theme-btn").textContent = dark ? "☀️" : "🌙";
+  $("#theme-btn").setAttribute("aria-label", dark ? "밝은 화면으로" : "어두운 화면으로");
+}
+applyTheme(document.documentElement.dataset.theme);
+$("#theme-btn").onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = dark ? "light" : "dark";
+  try { localStorage.setItem("cs-theme", next); } catch (e) {}
+  applyTheme(next);
 };
 
 boot();

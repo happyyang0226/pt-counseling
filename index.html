@@ -2,15 +2,22 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" content="#f6f5fb" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#14151c" media="(prefers-color-scheme: dark)" />
+<script>try{var t=localStorage.getItem("cs-theme");if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
 <title>물리치료학과 지도교수 상담</title>
 <link rel="stylesheet" href="style.css" />
 <script src="config.js"></script>
 </head>
 <body>
 <header class="top">
-  <div class="brand">물리치료학과 지도교수 상담</div>
-  <div id="who" class="who"></div>
+  <div class="brand"><span class="brand-dot" aria-hidden="true">💬</span>지도교수 상담</div>
+  <div class="top-right">
+    <div id="who" class="who"></div>
+    <button type="button" id="theme-btn" class="theme-btn" aria-label="화면 밝기 바꾸기">🌙</button>
+  </div>
 </header>
 
 <main id="app">
