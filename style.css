@@ -674,3 +674,13 @@ table.board tr.muted-row td { opacity: .6; }
   table.board td::before { content: attr(data-th); font-size: 12px; color: var(--muted); font-weight: 700; padding-top: 2px; }
   table.board .board-content { min-width: 0; }
 }
+.pick-box { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: var(--field); border-radius: 18px; padding: 14px; margin: -8px 0 18px; }
+.pick-box label { margin: 0; color: var(--ink); font-weight: 600; }
+.pick-box input, .pick-box select { background: var(--card); }
+.pick-box .hint { grid-column: 1 / -1; margin: 0; }
+.time-edit { margin: 8px 0; }
+.time-edit label { margin: 0; font-size: 13px; }
+.time-edit input { max-width: 260px; }
+.alert-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow);
+  padding: 10px 14px; margin-bottom: 12px; font-size: 14px; color: var(--ink); }
+.alert-bar #alert-state { flex: 1 1 220px; }

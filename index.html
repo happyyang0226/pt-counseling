@@ -179,6 +179,11 @@
 
   <!-- 교수 화면 -->
   <section id="view-admin" class="hidden">
+    <div class="alert-bar" id="alert-bar">
+      <span id="alert-state">🔔 새 상담 신청 알림</span>
+      <button type="button" class="small" id="alert-btn">알림 켜기</button>
+      <button type="button" class="small primary hidden" id="alert-new">새 신청 <b id="alert-n">0</b>건 보기</button>
+    </div>
     <div class="classbar">
       <span>반 보기</span>
       <div class="seg" id="class-filter">
@@ -190,7 +195,7 @@
     <nav class="tabs wide">
       <button class="tab active" data-admin="dashboard">대시보드</button>
       <button class="tab" data-admin="requests">신청 목록</button>
-      <button class="tab" data-admin="slots">상담 시간</button>
+      <button class="tab hidden" data-admin="slots">상담 시간</button>
       <button class="tab" data-admin="students">학생별 이력</button>
       <button class="tab" data-admin="followup">후속 조치</button>
       <button class="tab" data-admin="questions">익명 질문</button>

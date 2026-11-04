@@ -143,6 +143,7 @@ async function boot() {
     show($("#help-bar"), false);
     show($("#view-admin"));
     loadAdmin("dashboard");
+    startAdminAlerts();
   } else if (!me.consent_at) {
     show($("#view-consent"));
   } else {
@@ -264,8 +265,8 @@ async function loadHome() {
   $("#hello-title").textContent = `안녕, ${nm}! 오늘 기분은 어때? 😊`;
   const [{ data: mood }, { data: reqs }] = await Promise.all([
     sb.from("cs_moods").select("mood").eq("mood_date", today()).maybeSingle(),
-    sb.from("cs_requests").select("id, status, mode, mode_id, area_id, topic, slots:cs_slots(starts_at, duration_min)").in("status", ["대기", "확정"]),
-  ]);
+    sb.from("cs_requests").select("id, status, mode, mode_id, area_id, topic, preferred_at, slots:cs_slots(starts_at, duration_min)").in("status", ["대기", "확정"]),
+  ]).then(([a, b]) => [a, { ...b, data: withTime(b.data) }]);
   paintMood(mood?.mood || 0);
   const next = (reqs || []).filter((r) => r.slots && new Date(r.slots.starts_at) > new Date())
     .sort((a, b) => new Date(a.slots.starts_at) - new Date(b.slots.starts_at))[0];
@@ -375,7 +376,7 @@ const redPicked = () => W.concerns.some((c) => itemGrade(c) === "red") || W.impa
 const withEmoji = (items) => items.map((i) => ({ ...i, icon: i.icon || EMOJI[i.id] || "" }));
 const newWizard = () => ({
   step: 1, area: null, concerns: [], otherText: "", moreOpen: false, moreTab: null, areaNote: null,
-  first: null, since: null, impact: null, help: [], mode: null, slot: null, extra: "", entry: null,
+  first: null, since: null, impact: null, help: [], mode: null, slot: null, date: "", time: "", extra: "", entry: null,
   token: crypto.randomUUID(), submitting: false, done: null,
 });
 let W = newWizard();
@@ -386,10 +387,14 @@ const isCommon = (id) => id.startsWith("common.");
 const realConcerns = () => W.concerns.filter((id) => !isCommon(id));
 const areaOf = (id) => ITEMS.find((i) => i.id === id)?.area_id;
 const areaItem = (id) => ITEMS.find((i) => i.id === id && i.kind === "area");
-const slotLabel = (id) => {
-  const s = SLOTS.find((x) => String(x.id) === String(id));
-  return s ? `${fmt(s.starts_at)} (${s.duration_min}분)` : "";
-};
+// 학생이 직접 고른 희망 날짜·시간
+const pickedISO = () => (W.date && W.time ? new Date(`${W.date}T${W.time}:00+09:00`).toISOString() : null);
+const slotLabel = () => (pickedISO() ? fmt(pickedISO()) : "");
+// 신청 행에 '시간'을 하나로: 학생이 고른 시간(preferred_at) 또는 예전 방식(교수가 연 시간)
+const withTime = (rows) => (rows || []).map((r) => (r && !r.slots && r.preferred_at ? { ...r, slots: { starts_at: r.preferred_at, duration_min: 30 } } : r));
+const todayKST = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+const addDays = (d, n) => new Date(new Date(d + "T12:00:00+09:00").getTime() + n * 864e5).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+const TIMES = Array.from({ length: 23 }, (_, i) => { const m = 9 * 60 + i * 30; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`; }); // 09:00~20:00
 
 function optHTML({ type, name, id, label, sub, icon, checked }) {
   return `<label class="opt ${checked ? "on" : ""}">
@@ -561,13 +566,22 @@ function stepMode() {
   return `<h3 class="wz-title" tabindex="-1">어떻게 만날까요?</h3>` +
     groupHTML({ legend: "어떤 방식으로 상담받고 싶으세요?", name: "mode", items: optsOf("mode"), selected: W.mode });
 }
-// 7단계: 희망 시간 + 하고 싶은 말
+// 7단계: 희망 날짜·시간을 학생이 직접 정함
 function stepTime() {
-  const slots = SLOTS.map((s) => ({ id: String(s.id), label: fmt(s.starts_at), sub: `${s.duration_min}분 · 교수님이 확인하면 확정돼요`, icon: "🗓️" }))
-    .concat([{ id: "later", label: "시간은 교수님과 따로 정할게요", sub: "교수님이 연락드려요", icon: "📩" }]);
+  const t0 = todayKST();
+  const opts = [
+    { id: "pick", label: "날짜와 시간을 직접 정할게요", sub: "교수님이 확인하면 확정돼요", icon: "🗓️" },
+    { id: "later", label: "시간은 교수님과 따로 정할게요", sub: "교수님이 연락드려요", icon: "📩" },
+  ];
+  const nowHM = new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
+  const times = TIMES.filter((t) => W.date !== t0 || t > nowHM);
   return `<h3 class="wz-title" tabindex="-1">언제가 좋아요?</h3>` +
-    groupHTML({ legend: "언제 만나면 좋을까요?", name: "slot", items: slots, selected: W.slot,
-      extra: SLOTS.length ? "" : `<p class="note-box">지금 열려 있는 상담 시간이 없어요. "따로 정할게요"를 고르면 교수님이 시간을 알려 드려요.</p>` }) +
+    groupHTML({ legend: "상담하고 싶은 날짜와 시간을 정해 주세요.", name: "slot", items: opts, selected: W.slot }) +
+    `<div id="wz-pick" class="pick-box" ${W.slot === "pick" ? "" : "hidden"}>
+      <label>날짜<input type="date" id="wz-date" min="${t0}" max="${addDays(t0, 60)}" value="${esc(W.date)}" /></label>
+      <label>시간<select id="wz-time"><option value="">시간 고르기</option>${times.map((t) => `<option ${t === W.time ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <p class="hint" id="wz-pick-label">${W.date && W.time ? `👉 ${esc(slotLabel())} 으로 신청해요` : "오전 9시부터 오후 8시까지, 30분 단위로 고를 수 있어요."}</p>
+    </div>` +
     `<div class="q extra">
       <label for="wz-extra" class="q-legend">추가로 전하고 싶은 이야기가 있나요? <span class="optional">(선택)</span></label>
       <textarea id="wz-extra" rows="3" maxlength="2000" placeholder="적지 않아도 신청할 수 있어요.">${esc(W.extra)}</textarea>
@@ -598,7 +612,7 @@ function step5() {
       ${row("일상·공부에 주는 영향", esc(LBL[W.impact]), 4)}
       ${row("받고 싶은 도움", W.help.map((h) => esc(LBL[h])).join(", "), 5)}
       ${row("상담 방식", esc(LBL[W.mode]), 6)}
-      ${row("희망 시간", W.slot === "later" ? "교수님과 따로 정하기" : `${esc(slotLabel(W.slot))} <span class="badge s-대기">교수님 확정 전</span>`, 7)}
+      ${row("희망 시간", W.slot === "later" ? "교수님과 따로 정하기" : `${esc(slotLabel())} <span class="badge s-대기">교수님 확정 전</span>`, 7)}
       ${row("추가로 전한 이야기", W.extra.trim() ? esc(W.extra.trim()) : "<span class='hint'>없음</span>", 7)}
     </dl>`;
 }
@@ -670,6 +684,20 @@ function bindWizard() {
   if (other) other.oninput = () => (W.otherText = other.value);
   const extra = $("#wz-extra");
   if (extra) extra.oninput = () => { W.extra = extra.value; $("#wz-help").hidden = !CRISIS_RE.test(W.extra); };
+  const dIn = $("#wz-date"), tIn = $("#wz-time");
+  if (dIn && tIn) {
+    const sync = () => {
+      const t0 = todayKST();
+      const nowHM = new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
+      const ok = TIMES.filter((t) => W.date !== t0 || t > nowHM);
+      if (W.time && !ok.includes(W.time)) W.time = "";
+      tIn.innerHTML = `<option value="">시간 고르기</option>` + ok.map((t) => `<option ${t === W.time ? "selected" : ""}>${t}</option>`).join("");
+      $("#wz-pick-label").textContent = W.date && W.time ? `👉 ${slotLabel()} 으로 신청해요` : "오전 9시부터 오후 8시까지, 30분 단위로 고를 수 있어요.";
+      $("#wz-msg").textContent = "";
+    };
+    dIn.onchange = () => { W.date = dIn.value; sync(); };
+    tIn.onchange = () => { W.time = tIn.value; sync(); };
+  }
   $$("[data-goto]", body).forEach((b) => (b.onclick = () => { W.step = Number(b.dataset.goto); renderWizard(); }));
   $("#wz-new")?.addEventListener("click", () => { if (PREVIEW) return previewReset(); W = newWizard(); renderWizard(); });
 }
@@ -711,7 +739,7 @@ function onPick(inp) {
   else if (name === "impact") W.impact = value;
   else if (name === "help") W.help = checked ? [...new Set([...W.help, value])] : W.help.filter((h) => h !== value);
   else if (name === "mode") W.mode = value;
-  else if (name === "slot") W.slot = value;
+  else if (name === "slot") { W.slot = value; const pb = $("#wz-pick"); if (pb) pb.hidden = value !== "pick"; }
   $("#wz-msg").textContent = "";
   if (name === "impact" && $("#wz-red")) $("#wz-red").hidden = value !== "impact.very";
   if (name === "impact" && value === "impact.very") return; // 긴급 안내를 읽을 수 있게 자동으로 넘기지 않음
@@ -758,7 +786,9 @@ function wzCheck() {
     4: [need(W.impact, "고민이 주는 영향을 하나 골라 주세요.", "q-impact")],
     5: [need(W.help.length, "받고 싶은 도움을 하나 이상 골라 주세요.", "q-help")],
     6: [need(W.mode, "상담 방식을 하나 골라 주세요.", "q-mode")],
-    7: [need(W.slot, "희망 시간을 고르거나 \"따로 정할게요\"를 골라 주세요.", "q-slot")],
+    7: [need(W.slot, "날짜·시간을 직접 정하거나 \"따로 정할게요\"를 골라 주세요.", "q-slot"),
+        need(W.slot !== "pick" || (W.date && W.time), "상담하고 싶은 날짜와 시간을 골라 주세요.", "wz-pick"),
+        need(W.slot !== "pick" || !pickedISO() || new Date(pickedISO()) > new Date(), "지금보다 뒤의 시간을 골라 주세요.", "wz-pick")],
   }[W.step] || [];
   return checks.find(Boolean);
 }
@@ -795,14 +825,15 @@ async function submitWizard() {
     impact_id: W.impact,
     help_ids: W.help,
     mode_id: W.mode,
-    slot_id: W.slot === "later" ? null : Number(W.slot),
+    slot_id: null,
+    preferred_at: W.slot === "pick" ? pickedISO() : null,
     concern: W.extra.trim() || null,
     entry_area_id: W.entry, // 첫 화면에서 누른 분야 카드 (교수 확인용)
     mode: "대면", topic: "잘 모르겠어요", // 서버가 선택한 ID에 맞게 다시 채운다
   };
   if (PREVIEW) { // 교수 미리보기: 저장하지 않고 교수 화면에 보일 모습을 보여 준다
     W.submitting = false;
-    W.done = { slot: W.slot === "later" ? "" : slotLabel(W.slot), area: LBL[W.area], mode: LBL[W.mode], grade: wzGrade(), concerns: realConcerns(), preview: { ...row, mode: LBL[W.mode], risk_grade: wzGrade() } };
+    W.done = { slot: W.slot === "pick" ? slotLabel() : "", area: LBL[W.area], mode: LBL[W.mode], grade: wzGrade(), concerns: realConcerns(), preview: { ...row, mode: LBL[W.mode], risk_grade: wzGrade() } };
     W.step = WZ_STEPS.length + 1;
     renderWizard();
     return;
@@ -825,7 +856,7 @@ async function submitWizard() {
     return;
   }
   // 저장 성공(또는 이미 저장된 같은 신청)일 때만 완료 화면
-  W.done = { slot: W.slot === "later" ? "" : slotLabel(W.slot), area: LBL[W.area], mode: LBL[W.mode], grade: wzGrade(), concerns: realConcerns() };
+  W.done = { slot: W.slot === "pick" ? slotLabel() : "", area: LBL[W.area], mode: LBL[W.mode], grade: wzGrade(), concerns: realConcerns() };
   W.step = WZ_STEPS.length + 1;
   renderWizard();
   loadMyRequests();
@@ -836,7 +867,8 @@ async function submitWizard() {
 
 const STATUS_LABEL = { 대기: "확정 대기", 확정: "확정", 완료: "상담 완료", 취소: "취소" };
 async function loadMyRequests() {
-  const { data, error } = await sb.from("cs_requests").select("*, slots:cs_slots(starts_at, duration_min)").order("created_at", { ascending: false });
+  const { data: raw, error } = await sb.from("cs_requests").select("*, slots:cs_slots(starts_at, duration_min)").order("created_at", { ascending: false });
+  const data = withTime(raw);
   const box = $("#my-requests");
   if (error) return (box.textContent = "신청 내역을 불러오지 못했어요.");
   if (!data.length) return (box.innerHTML = `<p class="hint">아직 신청한 상담이 없습니다.</p>`);
@@ -1010,13 +1042,14 @@ async function loadDashboard() {
   const sem = semesterStart();
   const now = new Date(), week = new Date(now.getTime() + 7 * 864e5);
   const since7 = new Date(Date.now() - 6 * 864e5).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
-  const [{ data: reqs }, { data: students }, { data: notes }, { count: qCount }, { data: moods }] = await Promise.all([
+  const [{ data: reqsRaw }, { data: students }, { data: notes }, { count: qCount }, { data: moods }] = await Promise.all([
     sb.from("cs_requests").select("*, profiles:cs_profiles(name, student_no), slots:cs_slots(starts_at, duration_min)").in("status", ["대기", "확정"]),
     sb.from("cs_profiles").select("id, name, student_no").eq("role", "student").order("student_no"),
     sb.from("cs_notes").select("student_id, counsel_date").gte("counsel_date", sem.start),
     sb.from("cs_questions").select("id", { count: "exact", head: true }).is("answer", null),
     sb.from("cs_moods").select("id, mood, mood_date, checked_at, profiles:cs_profiles(id, name, student_no)").eq("mood", 1).gte("mood_date", since7).order("mood_date", { ascending: false }),
   ]);
+  const reqs = withTime(reqsRaw);
   const lowMoods = (moods || []).filter((m) => inClass(m.profiles?.student_no));
   const lowNew = lowMoods.filter((m) => !m.checked_at);
   const open = (reqs || []).filter((r) => inClass(r.profiles?.student_no));
@@ -1037,7 +1070,7 @@ async function loadDashboard() {
     ["확정 대기 신청", pending, "requests"],
     ["🔴 긴급 확인 전", alerts.filter((r) => !r.ack_at).length, "requests", alerts.some((r) => !r.ack_at) ? "warn" : ""],
     ["🟡 관심 확인 전", yellowN, "requests", yellowN ? "attn" : ""],
-    ["7일 내 상담", upcoming.length, "slots"],
+    ["7일 내 상담", upcoming.length, "requests"],
     ["답변 안 한 질문", qCount || 0, "questions"],
     ["기분 1점(관심)", lowNew.length, "dashboard", lowNew.length ? "attn" : ""],
     [`의무 ${REQUIRED}회 완료 학생`, `${doneN}/${studentsIn.length}`, "students"],
@@ -1090,10 +1123,12 @@ $("#status-filter").onchange = () => loadRequests();
 $("#area-filter").onchange = () => loadRequests();
 
 async function loadRequests() {
+  if (typeof newCount !== "undefined" && newCount) { newCount = 0; paintAlertBar(); }
   const status = $("#status-filter").value;
   let q = sb.from("cs_requests").select("*, profiles:cs_profiles(name, student_no), slots:cs_slots(starts_at, duration_min)").order("created_at", { ascending: false });
   if (status) q = q.eq("status", status);
-  const { data: all, error } = await q;
+  const { data: allRaw, error } = await q;
+  const all = withTime(allRaw);
   const box = $("#request-list");
   if (error) return (box.textContent = error.message);
   const area = $("#area-filter").value;
@@ -1112,6 +1147,9 @@ async function loadRequests() {
       ${r.crisis_flag ? textFlagHTML : r.risk_grade === "red" ? `<p class="crisis-tag">긴급 문항을 골랐어요. 학생에게는 "교수님이 곧 연락드릴게요"와 위기 연락처가 안내됐어요. 먼저 연락해 주세요.</p>` : ""}
       <p>${r.slots ? fmt(r.slots.starts_at) + ` (${r.slots.duration_min}분)` : "시간 협의 필요"} · 신청 ${new Date(r.created_at).toLocaleDateString("ko-KR")}</p>
       ${answerSummaryHTML(r)}
+      ${["대기", "확정"].includes(r.status) ? `<div class="row wrap time-edit"><label>상담 시간 정하기·바꾸기
+        <input type="datetime-local" data-tval="${r.id}" value="${r.slots ? new Date(r.slots.starts_at).toLocaleString("sv-SE", { timeZone: "Asia/Seoul" }).slice(0, 16).replace(" ", "T") : ""}" /></label>
+        <button class="small" data-tset="${r.id}">시간 저장</button></div>` : ""}
       <div class="row end">
         ${ackHTML(r)}
         ${r.status === "대기" ? `<button class="small primary" data-act="확정" data-id="${r.id}">확정</button>` : ""}
@@ -1126,6 +1164,14 @@ async function loadRequests() {
   }));
   $$("[data-note]", box).forEach((b) => (b.onclick = () => openNote(data.find((r) => String(r.id) === b.dataset.note))));
   bindAck(box, loadRequests);
+  $$("[data-tset]", box).forEach((b) => (b.onclick = async () => {
+    const v = $(`[data-tval="${b.dataset.tset}"]`, box).value;
+    if (!v) return alert("날짜와 시간을 골라 주세요.");
+    const { error } = await sb.from("cs_requests").update({ preferred_at: new Date(v + ":00+09:00").toISOString(), slot_id: null }).eq("id", b.dataset.tset);
+    if (error) return alert(error.message);
+    toast("상담 시간을 바꿨습니다. 학생 화면에도 바로 보입니다.");
+    loadRequests();
+  }));
 }
 
 // 상담 일지 + 분야별 피드백
@@ -1629,6 +1675,62 @@ $("#purge-btn").onclick = async () => {
   await refreshClassMap();
   loadRoster();
 };
+
+// ---------- 교수: 새 상담 신청 알림 (웹앱을 열어 둔 동안 소리 + 화면 알림 + 기기 알림) ----------
+let reqChannel = null, newCount = 0, audioCtx = null;
+const BASE_TITLE = document.title;
+const notifOK = () => "Notification" in window && Notification.permission === "granted";
+function paintAlertBar() {
+  const btn = $("#alert-btn");
+  if (!("Notification" in window)) { btn.hidden = true; $("#alert-state").textContent = "🔔 이 브라우저는 기기 알림을 지원하지 않아요 (화면 알림·소리는 작동)"; }
+  else if (Notification.permission === "granted") { btn.hidden = true; $("#alert-state").textContent = "🔔 새 신청 알림 켜짐 · 이 창을 열어 두면 소리와 알림으로 알려 드려요"; }
+  else if (Notification.permission === "denied") { btn.hidden = true; $("#alert-state").textContent = "🔕 브라우저에서 알림이 막혀 있어요 (주소창 왼쪽 자물쇠 → 알림 허용). 화면 알림·소리는 작동해요"; }
+  else { btn.hidden = false; $("#alert-state").textContent = "🔔 새 신청이 오면 알려 드릴까요?"; }
+  $("#alert-n").textContent = newCount;
+  $("#alert-new").classList.toggle("hidden", !newCount);
+  document.title = newCount ? `(${newCount}) 새 상담 신청 · ${BASE_TITLE}` : BASE_TITLE;
+}
+function chime(urgent) {
+  try {
+    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    const notes = urgent ? [660, 660, 660] : [784, 1047];
+    notes.forEach((f, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * 0.22;
+      o.type = "sine"; o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      o.start(t); o.stop(t + 0.21);
+    });
+  } catch (e) { /* 소리를 낼 수 없는 환경 */ }
+}
+function startAdminAlerts() {
+  paintAlertBar();
+  $("#alert-btn").onclick = async () => {
+    try { audioCtx ||= new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume?.(); } catch (e) {}
+    if ("Notification" in window) await Notification.requestPermission();
+    paintAlertBar();
+    if (notifOK()) new Notification("알림을 켰어요", { body: "새 상담 신청이 오면 이렇게 알려 드릴게요." });
+  };
+  $("#alert-new").onclick = () => { newCount = 0; paintAlertBar(); $("#status-filter").value = "대기"; loadAdmin("requests"); };
+  if (reqChannel) return;
+  reqChannel = sb.channel("new-requests")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "cs_requests" }, async ({ new: r }) => {
+      const { data: p } = await sb.from("cs_profiles").select("name, student_no").eq("id", r.student_id).maybeSingle();
+      const who = p ? `${p.name}(${p.student_no})` : "학생";
+      const urgent = r.risk_grade === "red";
+      const when = r.preferred_at ? fmt(r.preferred_at) : "시간 협의";
+      const msg = `${urgent ? "🔴 긴급 · " : r.risk_grade === "yellow" ? "🟡 관심 · " : ""}${who} · ${LBL[r.area_id] || r.topic} · ${when}`;
+      newCount++;
+      paintAlertBar();
+      chime(urgent);
+      toast(`새 상담 신청: ${msg}`);
+      if (notifOK()) {
+        const n = new Notification(urgent ? "🔴 긴급 상담 신청" : "새 상담 신청", { body: msg, tag: `req-${r.id}`, requireInteraction: urgent });
+        n.onclick = () => { window.focus(); newCount = 0; paintAlertBar(); loadAdmin(urgent ? "dashboard" : "requests"); n.close(); };
+      }
+      if (["dashboard", "requests"].includes(curPane)) loadAdmin(curPane);
+    })
+    .subscribe();
+}
 
 // 밝은/어두운 화면 (기기 설정을 따르고, 버튼으로 바꾼 값만 이 브라우저에 기억)
 function applyTheme(t) {
