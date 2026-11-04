@@ -581,3 +581,57 @@ dialog::backdrop { background: rgba(10, 10, 25, .45); }
 .chip-btn, .chip-check { background: var(--field); color: var(--ink); border: 0; min-height: 36px; }
 .chip-btn.active { background: var(--main); color: var(--main-ink); }
 .wz-steps .n { background: var(--card); }
+
+/* ===== 학생 홈 ===== */
+.home { display: flex; flex-direction: column; gap: 0; }
+.hello { background: linear-gradient(135deg, var(--main-soft), var(--pink-soft)); }
+.hello-title { font-size: 23px; font-weight: 800; letter-spacing: -.03em; line-height: 1.4; margin: 2px 0 16px; word-break: keep-all; }
+.moods { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.mood { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 78px; padding: 10px 4px;
+  background: var(--card); border: 2px solid transparent; border-radius: 18px; box-shadow: var(--shadow); }
+.mood span { font-size: 30px; line-height: 1; transition: transform .2s; }
+.mood small { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.mood:hover span { transform: scale(1.12); }
+.mood.on { border-color: var(--main); background: var(--card); }
+.mood.on span { transform: scale(1.18); }
+.mood.on small { color: var(--main); }
+.mood-msg { margin: 12px 2px 0; font-size: 14px; color: var(--ink); min-height: 1.4em; }
+.mood-msg.low { color: var(--ink); }
+.home-bar { height: 12px; border-radius: 999px; background: var(--field); overflow: hidden; margin: 8px 0 10px; }
+.home-bar span { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--mint), var(--main)); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+.progress-card .count-big { font-size: 17px; color: var(--main); background: var(--main-soft); padding: 4px 12px; border-radius: 999px; }
+.progress-card .count-big.done { color: var(--mint); background: var(--mint-soft); }
+.home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.big-btn { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 18px;
+  min-height: 112px; padding: 18px; border-radius: var(--radius); font-size: 17px; font-weight: 800; text-align: left; box-shadow: var(--shadow); }
+.big-btn span { font-size: 30px; }
+.big-btn.soft { background: var(--card); color: var(--ink); }
+.eyebrow-s { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.booking-main { display: flex; align-items: center; gap: 12px; }
+.booking-main > div { flex: 1; min-width: 0; }
+.booking-main b { font-size: 17px; }
+.booking-main p { margin: 2px 0 0; }
+.booking-icon { width: 48px; height: 48px; flex: 0 0 48px; border-radius: 16px; display: grid; place-items: center; font-size: 26px; background: var(--mint-soft); }
+.home-fb .fb-quote { font-size: 16px; line-height: 1.65; margin: 4px 0 12px; white-space: pre-wrap; }
+.home-fb.unread { box-shadow: 0 0 0 2px var(--main), var(--shadow); }
+.stat.attn { background: var(--attn-soft); }
+.stat.attn b { color: var(--attn); }
+
+/* 신청 완료: 수고했어요 + 작은 축하 조각 */
+.done-anim { position: relative; width: 84px; height: 84px; margin: 6px auto 14px; }
+.done-anim .done-check { margin: 0; }
+.done-anim i { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border-radius: 3px; opacity: 0;
+  background: var(--main); animation: burst .9s ease-out .15s forwards; }
+.done-anim i:nth-of-type(3n) { background: #ffb4c8; } .done-anim i:nth-of-type(3n+1) { background: #8fdcc0; }
+.done-anim i:nth-of-type(1) { --x: -60px; --y: -40px; } .done-anim i:nth-of-type(2) { --x: 60px; --y: -44px; }
+.done-anim i:nth-of-type(3) { --x: -70px; --y: 10px; } .done-anim i:nth-of-type(4) { --x: 72px; --y: 6px; }
+.done-anim i:nth-of-type(5) { --x: -40px; --y: 56px; } .done-anim i:nth-of-type(6) { --x: 44px; --y: 58px; }
+.done-anim i:nth-of-type(7) { --x: 0; --y: -70px; } .done-anim i:nth-of-type(8) { --x: -20px; --y: 70px; }
+.done-anim i:nth-of-type(9) { --x: 24px; --y: -64px; } .done-anim i:nth-of-type(10) { --x: 80px; --y: -20px; }
+@keyframes burst { 0% { opacity: 1; transform: translate(-50%, -50%) scale(.6); } 100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) rotate(160deg) scale(1); } }
+
+@media (max-width: 380px) {
+  .mood small { font-size: 11px; }
+  .mood span { font-size: 26px; }
+  .hello-title { font-size: 21px; }
+}

@@ -233,13 +233,75 @@ async function loadMyProgress() {
   const { data: n } = await sb.rpc("cs_my_counsel_count", { p_since: sem.start });
   const cnt = n || 0;
   $("#my-sem-title").textContent = `${sem.label} 상담`;
-  $("#my-count").textContent = `${cnt} / ${REQUIRED}회`;
+  $("#my-count").textContent = `상담 ${Math.min(cnt, REQUIRED)}/${REQUIRED} 완료`;
+  $("#my-bar").style.width = `${Math.min(100, (cnt / REQUIRED) * 100)}%`;
   $("#my-count").classList.toggle("done", cnt >= REQUIRED);
   $("#my-dots").innerHTML = Array.from({ length: Math.max(REQUIRED, cnt) }, (_, i) => `<span class="dot ${i < cnt ? "on" : ""}"></span>`).join("");
   $("#my-count-msg").textContent = cnt >= REQUIRED
-    ? "이번 학기 의무 상담을 모두 마쳤습니다. 더 필요하면 언제든 신청하세요."
-    : `이번 학기에는 지도교수 상담을 ${REQUIRED}번 받아야 합니다. ${REQUIRED - cnt}번 남았습니다.`;
+    ? "이번 학기 의무 상담을 다 마쳤어요 🎉 더 이야기하고 싶으면 언제든 신청해요."
+    : `이번 학기에는 ${REQUIRED}번 상담해요. ${REQUIRED - cnt}번 남았어요.`;
 }
+
+// ---------- 학생 홈 ----------
+const MOOD_MSG = {
+  1: "말해 줘서 고마워. 교수님께도 살짝 알려 둘게. 힘들면 언제든 상담을 신청해 줘.",
+  2: "그럴 때도 있지. 오늘은 조금 쉬어 가도 괜찮아.",
+  3: "무난한 하루구나. 오늘도 수고했어.",
+  4: "좋아! 그 기분 오래가길 🍀",
+  5: "최고다! 오늘 같은 날 많았으면 좋겠다 🌈",
+};
+const firstName = (n) => { const t = String(n || "").trim(); return t.length === 3 && /^[가-힣]+$/.test(t) ? t.slice(1) : t; };
+function paintMood(m) {
+  $$(".mood").forEach((b) => { const on = Number(b.dataset.mood) === m; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+  $("#mood-msg").textContent = m ? MOOD_MSG[m] : "오늘 기분을 하나 골라 줘. 교수님만 볼 수 있어.";
+  $("#mood-msg").classList.toggle("low", m === 1);
+}
+async function loadHome() {
+  const nm = firstName(MYINFO?.name || me?.name);
+  $("#hello-title").textContent = `안녕, ${nm}! 오늘 기분은 어때? 😊`;
+  const [{ data: mood }, { data: reqs }] = await Promise.all([
+    sb.from("cs_moods").select("mood").eq("mood_date", today()).maybeSingle(),
+    sb.from("cs_requests").select("id, status, mode, mode_id, area_id, topic, slots:cs_slots(starts_at, duration_min)").in("status", ["대기", "확정"]),
+  ]);
+  paintMood(mood?.mood || 0);
+  const next = (reqs || []).filter((r) => r.slots && new Date(r.slots.starts_at) > new Date())
+    .sort((a, b) => new Date(a.slots.starts_at) - new Date(b.slots.starts_at))[0];
+  const later = (reqs || []).find((r) => !r.slots);
+  const modeL = (r) => LBL[r.mode_id] || r.mode;
+  const modeIcon = (r) => (/온라인|비대면/.test(modeL(r)) ? "💻" : /대면|만나/.test(modeL(r)) ? "🏫" : "👌");
+  $("#next-booking").innerHTML = next ? `
+    <div class="card booking">
+      <p class="eyebrow-s">다음 상담</p>
+      <div class="booking-main"><span class="booking-icon" aria-hidden="true">${modeIcon(next)}</span>
+        <div><b>${esc(fmt(next.slots.starts_at))}</b><p class="hint">${esc(modeL(next))} · ${next.slots.duration_min}분 · ${esc(LBL[next.area_id] || next.topic)}</p></div>
+        <span class="badge s-${esc(next.status)}">${next.status === "확정" ? "확정" : "확정 전"}</span></div>
+    </div>` : later ? `
+    <div class="card booking"><p class="eyebrow-s">다음 상담</p>
+      <div class="booking-main"><span class="booking-icon" aria-hidden="true">📩</span>
+        <div><b>시간은 교수님이 정해서 알려 줄 거야</b><p class="hint">${esc(modeL(later))} · ${esc(LBL[later.area_id] || later.topic)}</p></div></div></div>` : "";
+  renderHomeFeedback();
+}
+function renderHomeFeedback() {
+  const f = myFeedback[0];
+  $("#home-feedback").innerHTML = f ? `
+    <div class="card home-fb ${f.read_at ? "" : "unread"}">
+      <div class="row between"><p class="eyebrow-s">교수님이 남긴 최근 피드백 ${f.read_at ? "" : `<span class="badge new">새</span>`}</p>
+        <span class="hint">${new Date(f.created_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}</span></div>
+      <p class="fb-quote">${esc(f.content)}</p>
+      <div class="row between"><span class="badge topic">${esc(f.topic)}</span><button type="button" class="small" id="go-fb">피드백 모두 보기</button></div>
+    </div>` : `<div class="card home-fb empty"><p class="eyebrow-s">교수님 피드백</p><p class="hint">상담을 마치면 교수님 피드백이 여기에 보여요.</p></div>`;
+  $("#go-fb")?.addEventListener("click", () => $("#feedback-card").scrollIntoView({ behavior: "smooth", block: "start" }));
+}
+$$(".mood").forEach((b) => (b.onclick = async () => {
+  const m = Number(b.dataset.mood);
+  paintMood(m);
+  if (PREVIEW) return;
+  const { error } = await sb.rpc("cs_set_mood", { p_mood: m });
+  if (error) { $("#mood-msg").textContent = "기분을 저장하지 못했어. 잠시 뒤에 다시 눌러 줘."; return; }
+  toast("오늘 기분을 남겼어요.");
+}));
+$("#go-counsel").onclick = () => { $("#wizard").scrollIntoView({ behavior: "smooth", block: "start" }); setTimeout(() => $(".wz-title")?.focus({ preventScroll: true }), 400); };
+$("#go-anon").onclick = () => { $("#anon-card").scrollIntoView({ behavior: "smooth", block: "start" }); setTimeout(() => $("#form-question textarea")?.focus({ preventScroll: true }), 400); };
 
 // 교수님 피드백 (분야별)
 let fbTopic = "";
@@ -262,6 +324,7 @@ async function loadMyFeedback() {
       <p>${esc(f.content)}</p>
     </div>`).join("")
     : `<p class="hint">${fbTopic ? `${esc(fbTopic)} 분야 피드백이 아직 없습니다.` : "상담을 마치면 교수님 피드백이 여기에 바로 나타납니다."}</p>`;
+  renderHomeFeedback();
   if (unread) setTimeout(() => sb.rpc("cs_mark_feedback_read"), 4000); // 화면에 보인 뒤 읽음 처리
 }
 
@@ -343,6 +406,7 @@ async function loadStudent() {
   renderWizard(false);
   loadMyRequests();
   loadPublicQuestions();
+  loadHome();
   loadMyProgress();
   loadMyFeedback();
   watchFeedback();
@@ -518,8 +582,9 @@ function step5() {
 function stepDone() {
   const d = W.done;
   return `<div class="done-box">
-    <div class="done-check" aria-hidden="true">✓</div>
-    <h3 class="wz-title" tabindex="-1">상담 신청이 접수됐어요</h3>
+    <div class="done-anim" aria-hidden="true"><div class="done-check">✓</div>${"<i></i>".repeat(10)}</div>
+    <h3 class="wz-title" tabindex="-1">수고했어요! 🎉</h3>
+    <p><b>상담 신청이 접수됐어요.</b></p>
     <p>${d.slot ? `희망 시간 <b>${esc(d.slot)}</b>은 아직 <b>확정 전</b>이에요. 교수님이 확인하면 "내 상담 내역"에서 "확정"으로 바뀌어요.`
       : "교수님이 상담 시간을 정해 연락드릴게요."}</p>
     <p class="hint">${esc(d.area)} · ${esc(d.mode)}</p>
@@ -716,6 +781,7 @@ async function submitWizard() {
   W.step = WZ_STEPS.length + 1;
   renderWizard();
   loadMyRequests();
+  loadHome();
   const { data: slots } = await sb.rpc("cs_available_slots");
   SLOTS = slots || [];
 }
@@ -836,12 +902,16 @@ const worryBadge = (w) => (w ? `<span class="badge ${w >= 5 ? "w-5" : w >= 4 ? "
 async function loadDashboard() {
   const sem = semesterStart();
   const now = new Date(), week = new Date(now.getTime() + 7 * 864e5);
-  const [{ data: reqs }, { data: students }, { data: notes }, { count: qCount }] = await Promise.all([
+  const since7 = new Date(Date.now() - 6 * 864e5).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  const [{ data: reqs }, { data: students }, { data: notes }, { count: qCount }, { data: moods }] = await Promise.all([
     sb.from("cs_requests").select("*, profiles:cs_profiles(name, student_no), slots:cs_slots(starts_at, duration_min)").in("status", ["대기", "확정"]),
     sb.from("cs_profiles").select("id, name, student_no").eq("role", "student").order("student_no"),
     sb.from("cs_notes").select("student_id, counsel_date").gte("counsel_date", sem.start),
     sb.from("cs_questions").select("id", { count: "exact", head: true }).is("answer", null),
+    sb.from("cs_moods").select("id, mood, mood_date, checked_at, profiles:cs_profiles(id, name, student_no)").eq("mood", 1).gte("mood_date", since7).order("mood_date", { ascending: false }),
   ]);
+  const lowMoods = (moods || []).filter((m) => inClass(m.profiles?.student_no));
+  const lowNew = lowMoods.filter((m) => !m.checked_at);
   const open = (reqs || []).filter((r) => inClass(r.profiles?.student_no));
   const studentsIn = (students || []).filter((s) => inClass(s.student_no));
   const alerts = open.filter((r) => r.crisis_flag);
@@ -859,6 +929,7 @@ async function loadDashboard() {
     ["글 먼저 확인", alerts.length, "requests", alerts.length ? "warn" : ""],
     ["7일 내 상담", upcoming.length, "slots"],
     ["답변 안 한 질문", qCount || 0, "questions"],
+    ["기분 1점(관심)", lowNew.length, "dashboard", lowNew.length ? "attn" : ""],
     [`의무 ${REQUIRED}회 완료 학생`, `${doneN}/${studentsIn.length}`, "students"],
   ].map(([t, n, go, cls]) => `<button class="stat ${cls || ""}" data-go="${go}"><b>${n}</b><span>${t}</span></button>`).join("");
   $$("[data-go]").forEach((b) => (b.onclick = () => loadAdmin(b.dataset.go)));
@@ -872,6 +943,24 @@ async function loadDashboard() {
       ${r.other_concern ? `<p class="hint">여기에 없는 고민: ${esc(r.other_concern)}</p>` : ""}
       ${r.concern ? `<p class="hint">추가 이야기: ${esc(r.concern)}</p>` : ""}
     </div>`).join("") : `<p class="hint">지금 먼저 확인할 글이 없습니다.</p>`;
+
+  $("#dash-moods").innerHTML = lowMoods.length ? lowMoods.map((m) => `
+    <div class="item ${m.checked_at ? "" : "attn"}">
+      <div class="row between"><b>😢 ${esc(m.profiles?.name)} (${esc(m.profiles?.student_no)}) ${classTag(m.profiles?.student_no)}</b>
+        <span class="hint">${fmtDate(m.mood_date)}</span></div>
+      <p class="hint">오늘 기분을 "힘들어(1점)"로 골랐어요. 안부를 한번 물어봐 주세요.</p>
+      <div class="row end">${m.checked_at ? `<span class="badge s-완료">확인함</span>` : `<button class="small" data-mood-ok="${m.id}">확인함</button>`}
+        <button class="small" data-mood-hist="${m.profiles?.id}">학생 이력</button></div>
+    </div>`).join("") : `<p class="hint">최근 7일 동안 기분을 1점으로 고른 학생이 없어요.</p>`;
+  $$("[data-mood-ok]").forEach((b) => (b.onclick = async () => {
+    await sb.from("cs_moods").update({ checked_at: new Date().toISOString() }).eq("id", b.dataset.moodOk);
+    loadDashboard();
+  }));
+  $$("[data-mood-hist]").forEach((b) => (b.onclick = async () => {
+    await loadAdmin("students");
+    const { data: st } = await sb.from("cs_profiles").select("*").eq("id", b.dataset.moodHist).maybeSingle();
+    if (st) showHistory(st);
+  }));
 
   $("#dash-week").innerHTML = upcoming.length ? `<table><tbody>${upcoming.map((r) => `
     <tr><td>${fmt(r.slots.starts_at)}</td><td>${esc(r.profiles?.name)} ${classTag(r.profiles?.student_no)}</td><td>${esc(r.mode)} · ${esc(LBL[r.area_id] || r.topic)}</td>

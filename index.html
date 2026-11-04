@@ -102,16 +102,40 @@
 
   <!-- 학생 화면 -->
   <section id="view-student" class="hidden">
-    <p class="notice">이 웹앱은 지도교수와의 상담을 돕기 위한 것으로, 전문 심리상담을 대신하지 않습니다. 마음이 많이 힘들 때는 아래 연락처로 바로 도움을 요청해 주세요.</p>
-
-    <div class="card progress-card">
-      <div class="row between">
-        <h2 id="my-sem-title">이번 학기 상담</h2>
-        <b id="my-count" class="count-big">0 / 3회</b>
+    <!-- 학생 홈 -->
+    <section id="home" class="home" aria-label="홈">
+      <div class="card hello">
+        <h1 id="hello-title" class="hello-title">안녕! 오늘 기분은 어때? 😊</h1>
+        <div class="moods" role="group" aria-labelledby="hello-title">
+          <button type="button" class="mood" data-mood="1" aria-pressed="false"><span>😢</span><small>힘들어</small></button>
+          <button type="button" class="mood" data-mood="2" aria-pressed="false"><span>😕</span><small>별로</small></button>
+          <button type="button" class="mood" data-mood="3" aria-pressed="false"><span>😐</span><small>그냥 그래</small></button>
+          <button type="button" class="mood" data-mood="4" aria-pressed="false"><span>🙂</span><small>괜찮아</small></button>
+          <button type="button" class="mood" data-mood="5" aria-pressed="false"><span>😄</span><small>최고야</small></button>
+        </div>
+        <p id="mood-msg" class="mood-msg" aria-live="polite"></p>
       </div>
-      <div class="dots" id="my-dots"></div>
-      <p id="my-count-msg" class="hint">이번 학기에는 지도교수 상담을 3번 받아야 합니다.</p>
-    </div>
+
+      <div class="card progress-card">
+        <div class="row between">
+          <h2 id="my-sem-title">이번 학기 상담</h2>
+          <b id="my-count" class="count-big">상담 0/3 완료</b>
+        </div>
+        <div class="home-bar" aria-hidden="true"><span id="my-bar"></span></div>
+        <div class="dots hidden" id="my-dots"></div>
+        <p id="my-count-msg" class="hint">이번 학기에는 지도교수 상담을 3번 받아야 해요.</p>
+      </div>
+
+      <div class="home-actions">
+        <button type="button" id="go-counsel" class="big-btn primary"><span aria-hidden="true">💬</span>상담 시작하기</button>
+        <button type="button" id="go-anon" class="big-btn soft"><span aria-hidden="true">🙈</span>익명으로 물어보기</button>
+      </div>
+
+      <div id="next-booking"></div>
+      <div id="home-feedback"></div>
+    </section>
+
+    <p class="notice">이 웹앱은 지도교수와의 상담을 돕기 위한 것으로, 전문 심리상담을 대신하지 않아요. 마음이 많이 힘들 때는 아래 연락처로 바로 도움을 요청해 주세요.</p>
 
     <section class="card wizard" id="wizard" aria-labelledby="wz-heading">
       <h2 id="wz-heading">상담 신청</h2>
@@ -141,7 +165,7 @@
       <div id="my-requests"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="anon-card">
       <h2>익명 질문함</h2>
       <p class="hint">이름 없이 질문을 남길 수 있습니다. 교수님도 누가 썼는지 알 수 없습니다. 답변한 질문은 아래 목록에 공개됩니다.</p>
       <form id="form-question">
@@ -180,6 +204,10 @@
         <h2>글을 먼저 확인할 신청</h2>
         <p class="hint">학생이 직접 쓴 글에 도움이 필요할 수 있는 표현이 있어 표시한 신청입니다. 고른 응답으로 위험도를 판정하지는 않습니다.</p>
         <div id="dash-alerts"></div>
+      </div>
+      <div class="card">
+        <h2>기분이 힘들다고 한 학생 <span class="hint">(최근 7일, 1점 = 관심)</span></h2>
+        <div id="dash-moods"></div>
       </div>
       <div class="card">
         <h2>앞으로 7일 상담 일정</h2>
