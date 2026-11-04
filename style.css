@@ -635,3 +635,24 @@ dialog::backdrop { background: rgba(10, 10, 25, .45); }
   .mood span { font-size: 26px; }
   .hello-title { font-size: 21px; }
 }
+
+/* ===== 미리 써 둔 피드백 · 등급 ===== */
+.tips { text-align: left; margin: 18px 0 6px; }
+.tips-head { font-weight: 800; font-size: 16px; margin: 0 0 10px; }
+.tip-card { background: var(--field); border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; animation: rise .35s ease both; }
+.tip-card:nth-child(3) { animation-delay: .08s; } .tip-card:nth-child(4) { animation-delay: .16s; }
+.tip-card b { display: block; font-size: 14px; color: var(--main); margin-bottom: 4px; }
+.tip-card p { margin: 0; font-size: 15px; line-height: 1.65; }
+.tip-yellow { background: var(--attn-soft); border-radius: 12px; padding: 10px 14px; font-size: 14px; margin: 4px 0 8px; }
+.tips-foot { font-size: 12px; color: var(--muted); margin: 6px 2px 0; }
+.done-red { text-align: left; margin: 14px 0 6px; }
+.done-anim.calm .done-check { background: var(--muted); box-shadow: none; animation: none; }
+.badge.g-red { background: var(--warn-soft); color: var(--warn); font-weight: 800; }
+.badge.g-yellow { background: var(--attn-soft); color: var(--attn); font-weight: 700; }
+.badge.g-green { background: var(--mint-soft); color: var(--mint); }
+details.item-area { border-radius: var(--radius-s); background: var(--field); padding: 10px 14px; margin-bottom: 8px; }
+details.item-area summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+details.item-area[open] summary { margin-bottom: 8px; }
+.item-edit { background: var(--card); }
+.item-edit textarea { margin: 8px 0; font-size: 14px; }
+select.grade-select { width: auto; margin: 0; padding: 6px 10px; font-size: 14px; }

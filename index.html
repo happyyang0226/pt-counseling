@@ -201,8 +201,8 @@
     <div id="admin-dashboard" class="adminpane">
       <div class="stats" id="dash-stats"></div>
       <div class="card">
-        <h2>글을 먼저 확인할 신청</h2>
-        <p class="hint">학생이 직접 쓴 글에 도움이 필요할 수 있는 표현이 있어 표시한 신청입니다. 고른 응답으로 위험도를 판정하지는 않습니다.</p>
+        <h2>🔴 먼저 연락할 긴급 신청</h2>
+        <p class="hint">긴급 문항을 골랐거나, 영향 정도를 "매우 많이"로 골랐거나, 직접 쓴 글에 위기 표현이 있는 신청입니다. 연락한 뒤 "확인함"을 눌러 주세요.</p>
         <div id="dash-alerts"></div>
       </div>
       <div class="card">
@@ -329,6 +329,11 @@
           <button class="primary" type="submit">저장</button>
         </form>
         <p id="settings-msg" class="msg"></p>
+      </div>
+      <div class="card">
+        <h2>설문 문항·미리 써 둔 피드백</h2>
+        <p class="hint">학생이 고민을 고르면 신청을 마친 뒤 아래 피드백이 바로 보입니다. 🟡 관심은 피드백과 함께 교수 화면에 노란색으로, 🔴 긴급은 피드백 없이 "교수님이 곧 연락드릴게요"와 위기 연락처가 나가고 대시보드 맨 위에 뜹니다. 최종 등급은 고른 문항, 영향 정도("매우 많이"는 긴급, "많이"는 관심), 직접 쓴 글 중 가장 높은 것으로 정해지며 낮아지지 않습니다.</p>
+        <div id="item-editor"></div>
       </div>
       <div class="card">
         <h2>1학년 학생 명단 등록</h2>

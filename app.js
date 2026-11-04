@@ -360,6 +360,15 @@ const EMOJI = {
   "mode.offline": "🏫", "mode.online": "💻", "mode.either": "👌",
   "common.other": "✏️", "common.later": "💬", "first.later": "💬",
 };
+const GRADE_RANK = { green: 0, yellow: 1, red: 2 };
+const itemGrade = (id) => ITEMS.find((i) => i.id === id)?.grade || "green";
+function wzGrade() {
+  let r = Math.max(0, ...W.concerns.map((c) => GRADE_RANK[itemGrade(c)] || 0));
+  if (W.impact === "impact.very") r = 2; else if (W.impact === "impact.much") r = Math.max(r, 1);
+  if (CRISIS_RE.test(`${W.extra || ""} ${W.otherText || ""}`)) r = 2;
+  return ["green", "yellow", "red"][r];
+}
+const redPicked = () => W.concerns.some((c) => itemGrade(c) === "red") || W.impact === "impact.very";
 const withEmoji = (items) => items.map((i) => ({ ...i, icon: i.icon || EMOJI[i.id] || "" }));
 const newWizard = () => ({
   step: 1, area: null, concerns: [], otherText: "", moreOpen: false, moreTab: null, areaNote: null,
@@ -491,8 +500,14 @@ function step2() {
       </div>
       ${optHTML({ type: "checkbox", name: "common", id: "common.later", label: "자세한 이야기는 상담 때 할게요", checked: W.concerns.includes("common.later") })}
     </div>
-    <div id="wz-first" aria-live="polite">${firstHTML()}</div>`;
+    <div id="wz-first" aria-live="polite">${firstHTML()}</div>
+    <div id="wz-red" class="crisis" role="note" ${redPicked() ? "" : "hidden"}>${redNoteHTML()}</div>`;
 }
+const redNoteHTML = () => `<strong class="crisis-title">말해 줘서 고마워요.</strong><br />
+  이 고민은 교수님이 직접 이야기를 듣고 싶어요. 신청을 보내면 교수님께 바로 알림이 가고, 먼저 연락드릴게요.<br />
+  지금 많이 힘들다면 기다리지 말고 연락해 주세요.<br />
+  · 자살예방상담전화 <a href="tel:109">109</a> (24시간) · 정신건강위기상담 <a href="tel:15770199">1577-0199</a><br />
+  · ${centerHTML()} · 위급하면 <a href="tel:119">119</a> / <a href="tel:112">112</a>`;
 function morePanelHTML() {
   return `<div class="opts">${concernItems(W.moreTab).map((c) => optHTML({ type: "checkbox", name: "concern", id: c.id, label: c.label, checked: W.concerns.includes(c.id) })).join("")}</div>`;
 }
@@ -515,6 +530,8 @@ function refreshStep2() {
   $("#wz-first").innerHTML = firstHTML();
   bindInputs($("#wz-first"));
   if (!had && realConcerns().length >= 2) $("#wz-first").classList.add("pop");
+  const red = $("#wz-red");
+  if (red) red.hidden = !redPicked();
 }
 
 // 3~5단계: 상담 준비 (한 화면에 한 문항)
@@ -525,7 +542,8 @@ function stepSince() {
 }
 function stepImpact() {
   return `<h3 class="wz-title" tabindex="-1">요즘 얼마나 신경 쓰여요?</h3>` +
-    groupHTML({ legend: "이 고민이 일상이나 공부에 얼마나 영향을 주나요?", name: "impact", items: optsOf("impact"), selected: W.impact });
+    groupHTML({ legend: "이 고민이 일상이나 공부에 얼마나 영향을 주나요?", name: "impact", items: optsOf("impact"), selected: W.impact }) +
+    `<div id="wz-red" class="crisis" role="note" ${W.impact === "impact.very" ? "" : "hidden"}>${redNoteHTML()}</div>`;
 }
 function stepHelp() {
   return `<h3 class="wz-title" tabindex="-1">어떤 도움이 필요해요?</h3>` +
@@ -579,15 +597,36 @@ function step5() {
     </dl>`;
 }
 
+// 신청 직후 보여 주는 '미리 받는 피드백' (교수님이 미리 써 둔 문장, AI 아님)
+function feedbackHTML(d) {
+  if (d.grade === "red") return `<div class="crisis done-red" role="note">
+      <strong class="crisis-title">교수님이 곧 연락드릴게요.</strong><br />
+      보내 준 내용은 교수님이 가장 먼저 확인해요. 혼자 기다리기 힘들면 지금 바로 연락해 주세요.<br />
+      · 자살예방상담전화 <a href="tel:109">109</a> (24시간)<br />
+      · 정신건강위기상담 <a href="tel:15770199">1577-0199</a> (24시간)<br />
+      · ${centerHTML()}<br />
+      · 위급하면 <a href="tel:119">119</a> 또는 <a href="tel:112">112</a></div>`;
+  const tips = (d.concerns || []).map((id) => ITEMS.find((i) => i.id === id)).filter((i) => i && i.tip);
+  if (!tips.length) return "";
+  return `<div class="tips">
+      <p class="tips-head">💡 상담 전에 먼저 읽어 봐요</p>
+      ${tips.slice(0, 4).map((i) => `<div class="tip-card"><b>${esc(i.label)}</b><p>${esc(i.tip)}</p></div>`).join("")}
+      ${d.grade === "yellow" ? `<p class="tip-yellow">이 고민은 다음 상담 때 교수님과 꼭 이야기 나눌게요.</p>` : ""}
+      <p class="tips-foot">교수님이 미리 써 둔 안내예요. 자세한 건 상담에서 함께 이야기해요.</p>
+    </div>`;
+}
+
 function stepDone() {
   const d = W.done;
   return `<div class="done-box">
-    <div class="done-anim" aria-hidden="true"><div class="done-check">✓</div>${"<i></i>".repeat(10)}</div>
-    <h3 class="wz-title" tabindex="-1">수고했어요! 🎉</h3>
+    ${d.grade === "red" ? `<div class="done-anim calm" aria-hidden="true"><div class="done-check">✓</div></div>
+    <h3 class="wz-title" tabindex="-1">잘 보냈어요</h3>` : `<div class="done-anim" aria-hidden="true"><div class="done-check">✓</div>${"<i></i>".repeat(10)}</div>
+    <h3 class="wz-title" tabindex="-1">수고했어요! 🎉</h3>`}
     <p><b>상담 신청이 접수됐어요.</b></p>
     <p>${d.slot ? `희망 시간 <b>${esc(d.slot)}</b>은 아직 <b>확정 전</b>이에요. 교수님이 확인하면 "내 상담 내역"에서 "확정"으로 바뀌어요.`
       : "교수님이 상담 시간을 정해 연락드릴게요."}</p>
     <p class="hint">${esc(d.area)} · ${esc(d.mode)}</p>
+    ${feedbackHTML(d)}
     ${d.preview ? `<div class="preview-result"><p class="note-box"><b>미리보기라 저장하지 않았어요.</b> 실제 신청이면 교수 화면 "신청 목록"에 아래처럼 보여요.</p>
       ${answerSummaryHTML(d.preview)}</div>` : ""}
     <button type="button" class="primary" id="wz-new">${d.preview ? "미리보기 처음부터 다시" : "다른 상담 신청하기"}</button>
@@ -667,6 +706,8 @@ function onPick(inp) {
   else if (name === "mode") W.mode = value;
   else if (name === "slot") W.slot = value;
   $("#wz-msg").textContent = "";
+  if (name === "impact" && $("#wz-red")) $("#wz-red").hidden = value !== "impact.very";
+  if (name === "impact" && value === "impact.very") return; // 긴급 안내를 읽을 수 있게 자동으로 넘기지 않음
   if (["since", "impact", "mode"].includes(name) && !W.submitting) {
     clearTimeout(onPick.t);
     onPick.t = setTimeout(() => { if (WZ_STEPS[W.step - 1] && !wzCheck()) { W.step++; renderWizard(); } }, 320);
@@ -754,7 +795,7 @@ async function submitWizard() {
   };
   if (PREVIEW) { // 교수 미리보기: 저장하지 않고 교수 화면에 보일 모습을 보여 준다
     W.submitting = false;
-    W.done = { slot: W.slot === "later" ? "" : slotLabel(W.slot), area: LBL[W.area], mode: LBL[W.mode], preview: { ...row, mode: LBL[W.mode] } };
+    W.done = { slot: W.slot === "later" ? "" : slotLabel(W.slot), area: LBL[W.area], mode: LBL[W.mode], grade: wzGrade(), concerns: realConcerns(), preview: { ...row, mode: LBL[W.mode], risk_grade: wzGrade() } };
     W.step = WZ_STEPS.length + 1;
     renderWizard();
     return;
@@ -777,7 +818,7 @@ async function submitWizard() {
     return;
   }
   // 저장 성공(또는 이미 저장된 같은 신청)일 때만 완료 화면
-  W.done = { slot: W.slot === "later" ? "" : slotLabel(W.slot), area: LBL[W.area], mode: LBL[W.mode] };
+  W.done = { slot: W.slot === "later" ? "" : slotLabel(W.slot), area: LBL[W.area], mode: LBL[W.mode], grade: wzGrade(), concerns: realConcerns() };
   W.step = WZ_STEPS.length + 1;
   renderWizard();
   loadMyRequests();
@@ -895,6 +936,17 @@ function answerSummaryHTML(r) {
     <dt>추가 이야기</dt><dd>${esc(r.concern) || "-"}</dd>
   </dl>`;
 }
+const GRADE_LABEL = { red: "🔴 긴급", yellow: "🟡 관심", green: "🟢 일반" };
+const gradeBadge = (r) => (r.risk_grade ? `<span class="badge g-${r.risk_grade}">${GRADE_LABEL[r.risk_grade]}</span>${r.round ? `<span class="badge">${r.round}회차</span>` : ""}` : "");
+const ackHTML = (r) => (r.risk_grade && r.risk_grade !== "green" && ["대기", "확정"].includes(r.status)
+  ? (r.ack_at ? `<span class="badge s-완료">확인함 ${new Date(r.ack_at).toLocaleDateString("ko-KR")}</span>` : `<button class="small ${r.risk_grade === "red" ? "primary" : ""}" data-ack="${r.id}">확인함</button>`) : "");
+function bindAck(root, after) {
+  $$("[data-ack]", root).forEach((b) => (b.onclick = async () => {
+    const { error } = await sb.from("cs_requests").update({ ack_at: new Date().toISOString() }).eq("id", b.dataset.ack);
+    if (error) return alert(error.message);
+    after();
+  }));
+}
 const textFlagHTML = `<p class="crisis-tag">학생이 직접 쓴 글에 도움이 필요할 수 있는 표현이 있어요. 글을 먼저 읽어 보고 필요하면 상담 일정과 관계없이 연락해 주세요.</p>`;
 const worryBadge = (w) => (w ? `<span class="badge ${w >= 5 ? "w-5" : w >= 4 ? "w-4" : ""}">고민 ${w}/5</span>` : "");
 
@@ -914,7 +966,9 @@ async function loadDashboard() {
   const lowNew = lowMoods.filter((m) => !m.checked_at);
   const open = (reqs || []).filter((r) => inClass(r.profiles?.student_no));
   const studentsIn = (students || []).filter((s) => inClass(s.student_no));
-  const alerts = open.filter((r) => r.crisis_flag);
+  const alerts = open.filter((r) => (r.crisis_flag || r.risk_grade === "red") && !r.ack_at)
+    .concat(open.filter((r) => (r.crisis_flag || r.risk_grade === "red") && r.ack_at));
+  const yellowN = open.filter((r) => r.risk_grade === "yellow" && !r.ack_at).length;
   const upcoming = open.filter((r) => r.slots && new Date(r.slots.starts_at) >= now && new Date(r.slots.starts_at) <= week)
     .sort((a, b) => new Date(a.slots.starts_at) - new Date(b.slots.starts_at));
   const semCnt = {};
@@ -926,7 +980,8 @@ async function loadDashboard() {
 
   $("#dash-stats").innerHTML = [
     ["확정 대기 신청", pending, "requests"],
-    ["글 먼저 확인", alerts.length, "requests", alerts.length ? "warn" : ""],
+    ["🔴 긴급 확인 전", alerts.filter((r) => !r.ack_at).length, "requests", alerts.some((r) => !r.ack_at) ? "warn" : ""],
+    ["🟡 관심 확인 전", yellowN, "requests", yellowN ? "attn" : ""],
     ["7일 내 상담", upcoming.length, "slots"],
     ["답변 안 한 질문", qCount || 0, "questions"],
     ["기분 1점(관심)", lowNew.length, "dashboard", lowNew.length ? "attn" : ""],
@@ -935,14 +990,17 @@ async function loadDashboard() {
   $$("[data-go]").forEach((b) => (b.onclick = () => loadAdmin(b.dataset.go)));
 
   $("#dash-alerts").innerHTML = alerts.length ? alerts.map((r) => `
-    <div class="item flag">
+    <div class="item ${r.ack_at ? "" : "flag"}">
       <div class="row between"><b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)}) ${classTag(r.profiles?.student_no)}</b>
         <span class="badge s-${esc(r.status)}">${esc(r.status)}</span></div>
-      ${textFlagHTML}
+      <p>${gradeBadge(r)} ${(r.concern_ids || []).filter((c) => itemGrade(c) === "red").map((c) => `<span class="ans-chip first">${esc(LBL[c])}</span>`).join("")}</p>
+      ${r.crisis_flag ? textFlagHTML : ""}
       <p>${esc(LBL[r.area_id] || r.topic)} · ${r.slots ? fmt(r.slots.starts_at) : "시간 미정"}</p>
       ${r.other_concern ? `<p class="hint">여기에 없는 고민: ${esc(r.other_concern)}</p>` : ""}
       ${r.concern ? `<p class="hint">추가 이야기: ${esc(r.concern)}</p>` : ""}
-    </div>`).join("") : `<p class="hint">지금 먼저 확인할 글이 없습니다.</p>`;
+      <div class="row end">${ackHTML(r)}</div>
+    </div>`).join("") : `<p class="hint">지금 먼저 연락할 긴급 신청이 없습니다.</p>`;
+  bindAck($("#dash-alerts"), loadDashboard);
 
   $("#dash-moods").innerHTML = lowMoods.length ? lowMoods.map((m) => `
     <div class="item ${m.checked_at ? "" : "attn"}">
@@ -987,16 +1045,20 @@ async function loadRequests() {
   const data = all.filter((r) => inClass(r.profiles?.student_no))
     .filter((r) => !area || r.area_id === area || (r.concern_ids || []).some((c) => areaOf(c) === area));
   if (!data.length) return (box.innerHTML = `<p class="hint">해당하는 신청이 없습니다.</p>`);
+  const pri = (r) => (["대기", "확정"].includes(r.status) && !r.ack_at ? GRADE_RANK[r.risk_grade] || 0 : 0);
+  data.sort((a, b) => pri(b) - pri(a));
   box.innerHTML = data.map((r) => `
-    <div class="item ${r.crisis_flag ? "flag" : ""}">
+    <div class="item ${r.risk_grade === "red" || r.crisis_flag ? "flag" : r.risk_grade === "yellow" ? "attn" : ""}">
       <div class="row between">
         <b>${esc(r.profiles?.name)} (${esc(r.profiles?.student_no)}) ${classTag(r.profiles?.student_no)}</b>
         <span>${r.entry_area_id ? `<span class="badge entry" title="첫 화면 분야 카드에서 시작">첫 화면 카드</span>` : ""}<span class="badge topic">${esc(LBL[r.area_id] || r.topic)}</span><span class="badge s-${esc(r.status)}">${esc(r.status)}</span></span>
       </div>
-      ${r.crisis_flag ? textFlagHTML : ""}
+      <p>${gradeBadge(r)}</p>
+      ${r.crisis_flag ? textFlagHTML : r.risk_grade === "red" ? `<p class="crisis-tag">긴급 문항을 골랐어요. 학생에게는 "교수님이 곧 연락드릴게요"와 위기 연락처가 안내됐어요. 먼저 연락해 주세요.</p>` : ""}
       <p>${r.slots ? fmt(r.slots.starts_at) + ` (${r.slots.duration_min}분)` : "시간 협의 필요"} · 신청 ${new Date(r.created_at).toLocaleDateString("ko-KR")}</p>
       ${answerSummaryHTML(r)}
       <div class="row end">
+        ${ackHTML(r)}
         ${r.status === "대기" ? `<button class="small primary" data-act="확정" data-id="${r.id}">확정</button>` : ""}
         ${["대기", "확정"].includes(r.status) ? `<button class="small" data-act="취소" data-id="${r.id}">취소</button>` : ""}
         ${r.status !== "취소" ? `<button class="small" data-note="${r.id}">${r.status === "완료" ? "일지 추가" : "일지 작성·완료"}</button>` : ""}
@@ -1008,6 +1070,7 @@ async function loadRequests() {
     loadRequests();
   }));
   $$("[data-note]", box).forEach((b) => (b.onclick = () => openNote(data.find((r) => String(r.id) === b.dataset.note))));
+  bindAck(box, loadRequests);
 }
 
 // 상담 일지 + 분야별 피드백
@@ -1202,7 +1265,7 @@ async function showHistory(s) {
     if (ev.kind === "req") {
       const r = ev.r;
       return `<div class="tl req"><p class="tl-date">${new Date(r.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })} · 상담 신청</p>
-        <div class="item ${r.crisis_flag ? "flag" : ""}"><b>${esc(LBL[r.area_id] || r.topic)}</b> · ${esc(LBL[r.mode_id] || r.mode)} <span class="badge s-${esc(r.status)}">${esc(r.status)}</span> ${worryBadge(r.worry_level)}
+        <div class="item ${r.crisis_flag ? "flag" : ""}"><b>${esc(LBL[r.area_id] || r.topic)}</b> · ${esc(LBL[r.mode_id] || r.mode)} <span class="badge s-${esc(r.status)}">${esc(r.status)}</span> ${gradeBadge(r)}
         ${r.crisis_flag ? textFlagHTML : ""}${answerSummaryHTML(r)}</div></div>`;
     }
     if (ev.kind === "note") return `<div class="tl"><p class="tl-date">${fmtDate(ev.n.counsel_date)} · 상담 기록</p>${noteHTML(ev.n, fbByNote[ev.n.id] || [])}</div>`;
@@ -1426,7 +1489,37 @@ $("#form-roster").onsubmit = async (e) => {
   loadRoster();
 };
 
+// 설문 문항 등급·미리 써 둔 피드백 관리
+async function loadItemEditor() {
+  const box = $("#item-editor");
+  const { data, error } = await sb.from("cs_items").select("*").eq("kind", "concern").eq("active", true).order("area_id").order("sort");
+  if (error) return (box.textContent = error.message);
+  const areas = itemsOf("area");
+  box.innerHTML = areas.map((a) => {
+    const list = data.filter((i) => i.area_id === a.id);
+    if (!list.length) return "";
+    return `<details class="item-area"><summary>${a.icon || ""} ${esc(a.label)} <span class="hint">(${list.length}개 · 🔴 ${list.filter((i) => i.grade === "red").length} · 🟡 ${list.filter((i) => i.grade === "yellow").length})</span></summary>
+      ${list.map((i) => `<div class="item item-edit" data-iid="${esc(i.id)}">
+        <div class="row between"><b>${esc(i.label)}</b>
+          <select class="grade-select" aria-label="등급">${["green", "yellow", "red"].map((g) => `<option value="${g}" ${i.grade === g ? "selected" : ""}>${GRADE_LABEL[g]}</option>`).join("")}</select></div>
+        <textarea rows="3" placeholder="${i.grade === "red" ? "긴급 문항은 피드백 대신 '교수님이 곧 연락드릴게요'와 위기 연락처가 나갑니다." : "학생에게 바로 보여 줄 짧은 피드백"}">${esc(i.tip || "")}</textarea>
+        <div class="row end"><button class="small primary" data-isave>저장</button></div>
+      </div>`).join("")}</details>`;
+  }).join("");
+  $$("[data-isave]", box).forEach((b) => (b.onclick = async () => {
+    const el = b.closest("[data-iid]");
+    const grade = $(".grade-select", el).value;
+    const tip = $("textarea", el).value.trim() || null;
+    const { error } = await sb.from("cs_items").update({ grade, tip }).eq("id", el.dataset.iid);
+    if (error) return alert(error.message);
+    const it = ITEMS.find((x) => x.id === el.dataset.iid);
+    if (it) { it.grade = grade; it.tip = tip; }
+    toast("저장했습니다. 다음 신청부터 적용됩니다.");
+  }));
+}
+
 async function loadRoster() {
+  loadItemEditor();
   const [{ data: roster, error }, { data: profs }] = await Promise.all([
     sb.from("cs_roster").select("*").order("student_no"),
     sb.from("cs_profiles").select("student_no").eq("role", "student"),
