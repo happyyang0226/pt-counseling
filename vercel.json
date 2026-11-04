@@ -1,1 +1,0 @@
-{"version":2,"framework":null,"buildCommand":"npm run build","headers":[{"source":"/(.*)","headers":[{"key":"Cache-Control","value":"no-cache"},{"key":"X-Content-Type-Options","value":"nosniff"}]}]}
