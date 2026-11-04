@@ -656,3 +656,21 @@ details.item-area[open] summary { margin-bottom: 8px; }
 .item-edit { background: var(--card); }
 .item-edit textarea { margin: 8px 0; font-size: 14px; }
 select.grade-select { width: auto; margin: 0; padding: 6px 10px; font-size: 14px; }
+
+/* 반별 학생 상담 현황 표 */
+table.board { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.board th { font-size: 13px; color: var(--muted); font-weight: 700; white-space: nowrap; padding: 8px; border-bottom: 1px solid var(--line); text-align: left; }
+table.board td { padding: 12px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.board td .hint { font-size: 12px; margin-top: 2px; }
+table.board .board-content { min-width: 200px; color: var(--ink); line-height: 1.55; }
+table.board tr.muted-row td { opacity: .6; }
+.name-btn { font-size: 15px; font-weight: 700; color: var(--main); text-decoration: none; padding: 0; }
+#class-board { overflow-x: auto; }
+@media (max-width: 640px) {   /* 휴대폰: 표 대신 학생별 카드 */
+  table.board thead { display: none; }
+  table.board, table.board tbody, table.board tr, table.board td { display: block; width: 100%; }
+  table.board tr { background: var(--field); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+  table.board td { border: 0; padding: 4px 0; display: grid; grid-template-columns: 84px 1fr; gap: 8px; }
+  table.board td::before { content: attr(data-th); font-size: 12px; color: var(--muted); font-weight: 700; padding-top: 2px; }
+  table.board .board-content { min-width: 0; }
+}

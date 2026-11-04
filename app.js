@@ -957,8 +957,56 @@ function bindAck(root, after) {
 const textFlagHTML = `<p class="crisis-tag">학생이 직접 쓴 글에 도움이 필요할 수 있는 표현이 있어요. 글을 먼저 읽어 보고 필요하면 상담 일정과 관계없이 연락해 주세요.</p>`;
 const worryBadge = (w) => (w ? `<span class="badge ${w >= 5 ? "w-5" : w >= 4 ? "w-4" : ""}">고민 ${w}/5</span>` : "");
 
+// 반별 학생 상담 현황 (대시보드 맨 위): 학생 | 상담분야 | 최근 상담일 | 최근 상담 내용 | 상담 횟수
+async function loadClassBoard() {
+  const sem = semesterStart();
+  const [{ data: roster }, { data: profs }, { data: notes }, { data: reqs }] = await Promise.all([
+    sb.from("cs_roster").select("student_no, name, class"),
+    sb.from("cs_profiles").select("*").eq("role", "student"),
+    sb.from("cs_notes").select("id, student_id, counsel_date, topic, content").order("counsel_date", { ascending: false }),
+    sb.from("cs_requests").select("student_id, area_id, topic, status, created_at").neq("status", "취소").order("created_at", { ascending: false }),
+  ]);
+  const byNo = Object.fromEntries((profs || []).map((p) => [p.student_no, p]));
+  const list = (roster || []).filter((r) => !classFilter || r.class === classFilter)
+    .sort((a, b) => (a.class || "Z").localeCompare(b.class || "Z") || a.student_no.localeCompare(b.student_no));
+  const title = classFilter ? `${CLASS_NAME[classFilter]} 학생 상담 현황` : "반별 학생 상담 현황 (전체)";
+  $("#class-board-title").textContent = title;
+  $("#class-board-hint").hidden = !!classFilter;
+  const rows = list.map((r) => {
+    const p = byNo[r.student_no];
+    const mine = p ? (notes || []).filter((n) => n.student_id === p.id) : [];
+    const semN = mine.filter((n) => n.counsel_date >= sem.start).length;
+    const last = mine[0];
+    const lastReq = p ? (reqs || []).find((q) => q.student_id === p.id) : null;
+    const areas = [...new Set(mine.map((n) => n.topic).filter(Boolean))];
+    return { r, p, mine, semN, last, lastReq, areas };
+  });
+  const doneN = rows.filter((x) => x.semN >= REQUIRED).length;
+  $("#class-board-sum").textContent = `${list.length}명 · 의무 ${REQUIRED}회 완료 ${doneN}명 · 가입 ${rows.filter((x) => x.p).length}명`;
+  if (!list.length) return ($("#class-board").innerHTML = `<p class="hint">명단에 학생이 없습니다.</p>`);
+  const cut = (t, n = 60) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n) + "…" : t; };
+  $("#class-board").innerHTML = `<table class="board"><thead><tr>
+      <th>학생</th><th>상담분야</th><th>최근 상담일</th><th>최근 상담 내용</th><th>상담 횟수</th></tr></thead><tbody>
+    ${rows.map(({ r, p, mine, semN, last, lastReq, areas }) => `<tr class="${p ? "" : "muted-row"}">
+      <td data-th="학생"><div>${p ? `<button class="link-btn name-btn" data-board="${p.id}">${esc(r.name)}</button>` : `${esc(r.name)} <span class="badge">미가입</span>`}
+        <div class="hint">${esc(r.student_no)} ${classFilter ? "" : classTag(r.student_no)}</div></div></td>
+      <td data-th="상담분야"><div>${areas.length ? areas.map((a) => `<span class="badge topic">${esc(a)}</span>`).join(" ")
+        : lastReq ? `<span class="badge">${esc(LBL[lastReq.area_id] || lastReq.topic)}</span><div class="hint">신청만 함 (${esc(lastReq.status)})</div>` : `<span class="hint">-</span>`}</div></td>
+      <td data-th="최근 상담일"><div>${last ? fmtDate(last.counsel_date) : `<span class="hint">-</span>`}</div></td>
+      <td data-th="최근 상담 내용" class="board-content"><div>${last?.content ? esc(cut(last.content)) : `<span class="hint">-</span>`}</div></td>
+      <td data-th="상담 횟수"><div><b class="cnt ${semN >= REQUIRED ? "ok" : "c" + Math.min(semN, 2)}">이번 학기 ${semN}/${REQUIRED}</b><div class="hint">전체 ${mine.length}회</div></div></td>
+    </tr>`).join("")}
+  </tbody></table>`;
+  $$("[data-board]").forEach((b) => (b.onclick = async () => {
+    const st = (profs || []).find((x) => x.id === b.dataset.board);
+    await loadAdmin("students");
+    if (st) showHistory(st);
+  }));
+}
+
 // 대시보드
 async function loadDashboard() {
+  loadClassBoard();
   const sem = semesterStart();
   const now = new Date(), week = new Date(now.getTime() + 7 * 864e5);
   const since7 = new Date(Date.now() - 6 * 864e5).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
