@@ -7,6 +7,8 @@
 <meta name="theme-color" content="#f6f5fb" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#14151c" media="(prefers-color-scheme: dark)" />
 <script>try{var t=localStorage.getItem("cs-theme");if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
+<link rel="manifest" href="/manifest.json" />
+<link rel="icon" href="/icon.svg" />
 <title>물리치료학과 지도교수 상담</title>
 <link rel="stylesheet" href="style.css" />
 <script src="config.js"></script>
@@ -182,6 +184,8 @@
     <div class="alert-bar" id="alert-bar">
       <span id="alert-state">🔔 새 상담 신청 알림</span>
       <button type="button" class="small" id="alert-btn">알림 켜기</button>
+      <button type="button" class="small primary hidden" id="push-btn">📱 이 기기로 푸시 받기</button>
+      <button type="button" class="small hidden" id="push-test">푸시 시험 보내기</button>
       <button type="button" class="small primary hidden" id="alert-new">새 신청 <b id="alert-n">0</b>건 보기</button>
     </div>
     <div class="classbar">

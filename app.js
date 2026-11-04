@@ -1686,6 +1686,7 @@ function paintAlertBar() {
   else if (Notification.permission === "granted") { btn.hidden = true; $("#alert-state").textContent = "🔔 새 신청 알림 켜짐 · 이 창을 열어 두면 소리와 알림으로 알려 드려요"; }
   else if (Notification.permission === "denied") { btn.hidden = true; $("#alert-state").textContent = "🔕 브라우저에서 알림이 막혀 있어요 (주소창 왼쪽 자물쇠 → 알림 허용). 화면 알림·소리는 작동해요"; }
   else { btn.hidden = false; $("#alert-state").textContent = "🔔 새 신청이 오면 알려 드릴까요?"; }
+  if (pushOn) { $("#alert-btn").hidden = true; $("#alert-state").textContent = "📱 이 기기 푸시 알림 켜짐 · 웹앱을 닫아도 새 신청이 오면 알려 드려요"; }
   $("#alert-n").textContent = newCount;
   $("#alert-new").classList.toggle("hidden", !newCount);
   document.title = newCount ? `(${newCount}) 새 상담 신청 · ${BASE_TITLE}` : BASE_TITLE;
@@ -1702,8 +1703,49 @@ function chime(urgent) {
     });
   } catch (e) { /* 소리를 낼 수 없는 환경 */ }
 }
+// ---------- 웹 푸시 (웹앱이 닫혀 있어도 이 기기로 알림) ----------
+let pushOn = false;
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const b64ToBytes = (b64) => { const p = "=".repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from([...raw].map((c) => c.charCodeAt(0))); };
+const deviceName = () => { const u = navigator.userAgent; return (/SM-[A-Z0-9]+/.exec(u)?.[0] || (/Android/.test(u) ? "Android" : /iPhone|iPad/.test(u) ? "iPhone/iPad" : /Windows/.test(u) ? "Windows PC" : /Mac/.test(u) ? "Mac" : "기기")) + (/SamsungBrowser/.test(u) ? " · 삼성 인터넷" : /Chrome/.test(u) ? " · 크롬" : ""); };
+async function setupPush() {
+  if (!pushSupported()) { $("#push-btn").hidden = true; return; }
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  navigator.serviceWorker.addEventListener("message", (e) => { if (e.data?.type === "open-requests") { newCount = 0; paintAlertBar(); loadAdmin("requests"); } });
+  const sub = await reg.pushManager.getSubscription();
+  if (sub && Notification.permission === "granted") { await savePushSub(sub); pushOn = true; }
+  paintPush();
+  $("#push-btn").onclick = async () => {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { toast("알림이 허용되지 않았어요. 브라우저 설정에서 이 사이트 알림을 허용해 주세요."); paintAlertBar(); return; }
+    try {
+      const r = await navigator.serviceWorker.ready;
+      const s2 = (await r.pushManager.getSubscription()) || await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.VAPID_PUBLIC_KEY) });
+      await savePushSub(s2);
+      pushOn = true; paintAlertBar(); paintPush();
+      toast("이 기기로 푸시 알림을 받아요. '푸시 시험 보내기'로 확인해 보세요.");
+    } catch (err) { alert("푸시 등록에 실패했어요: " + err.message); }
+  };
+  $("#push-test").onclick = async () => {
+    const { data, error } = await sb.rpc("cs_push_test");
+    if (error) return alert(error.message);
+    toast(data ? "시험 알림을 보냈어요. 몇 초 안에 휴대폰에 떠요." : "등록된 기기가 없어요. 먼저 '이 기기로 푸시 받기'를 눌러 주세요.");
+  };
+}
+async function savePushSub(sub) {
+  const j = sub.toJSON();
+  const { error } = await sb.from("cs_push_subs").upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, device: deviceName() }, { onConflict: "endpoint" });
+  if (error) console.warn("push save", error.message);
+}
+function paintPush() {
+  $("#push-btn").hidden = !pushSupported() || pushOn;
+  $("#push-test").hidden = !pushOn;
+  if (pushOn) $("#alert-state").textContent = "📱 이 기기 푸시 알림 켜짐 · 웹앱을 닫아도 새 신청이 오면 알려 드려요";
+}
+
 function startAdminAlerts() {
   paintAlertBar();
+  setupPush().catch((e) => console.warn("push", e));
   $("#alert-btn").onclick = async () => {
     try { audioCtx ||= new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume?.(); } catch (e) {}
     if ("Notification" in window) await Notification.requestPermission();
@@ -1723,7 +1765,7 @@ function startAdminAlerts() {
       paintAlertBar();
       chime(urgent);
       toast(`새 상담 신청: ${msg}`);
-      if (notifOK()) {
+      if (notifOK() && !pushOn) { // 푸시가 켜져 있으면 푸시가 알림을 띄우므로 겹치지 않게
         const n = new Notification(urgent ? "🔴 긴급 상담 신청" : "새 상담 신청", { body: msg, tag: `req-${r.id}`, requireInteraction: urgent });
         n.onclick = () => { window.focus(); newCount = 0; paintAlertBar(); loadAdmin(urgent ? "dashboard" : "requests"); n.close(); };
       }

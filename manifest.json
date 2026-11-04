@@ -1,0 +1,9 @@
+{
+  "name": "물리치료학과 지도교수 상담",
+  "short_name": "지도교수 상담",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f5fb",
+  "theme_color": "#5b67e8",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
