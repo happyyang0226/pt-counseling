@@ -90,16 +90,18 @@ const IDLE_MIN = 20;
 
 let me = null; // cs_profiles 행
 let centerPhone = "";
+let profPhone = "";
+const telA = (n) => `<a href="tel:${esc(n.replace(/[^0-9]/g, ""))}">${esc(n)}</a>`;
+const profHTML = () => (profPhone ? `담당교수 ${telA(profPhone)}` : "담당교수");
 
-const centerHTML = () => centerPhone
-  ? `${esc(CFG.COUNSEL_CENTER)} <a href="tel:${esc(centerPhone.replace(/[^0-9]/g, ""))}">${esc(centerPhone)}</a>`
-  : esc(CFG.COUNSEL_CENTER);
+const centerHTML = () => centerPhone ? `${esc(CFG.COUNSEL_CENTER)} ${telA(centerPhone)}` : esc(CFG.COUNSEL_CENTER);
 
 const crisisHTML = () => `
   <strong class="crisis-title">혼자 견디지 않아도 됩니다.</strong><br />
   지금 많이 힘들다면 바로 도움을 요청해 주세요.<br />
   · 자살예방상담전화 <a href="tel:109"><b>109</b></a> (24시간)<br />
   · 정신건강위기상담 <a href="tel:15770199">1577-0199</a><br />
+  · ${profHTML()}<br />
   · ${centerHTML()}<br />
   · 위급한 상황이면 <a href="tel:119">119</a> 또는 <a href="tel:112">112</a><br />
   교수님도 이 내용을 확인하고 빨리 연락드릴게요.`;
@@ -161,8 +163,9 @@ function showLogin(msg = "") {
 async function loadSettings() {
   const { data } = await sb.from("cs_settings").select("*");
   centerPhone = (data || []).find((r) => r.key === "center_phone")?.value || "";
+  profPhone = (data || []).find((r) => r.key === "prof_phone")?.value || "";
   $("#help-center").innerHTML = centerHTML();
-  if ($("#form-settings")) $("#form-settings").center_phone.value = centerPhone;
+  if ($("#form-settings")) { $("#form-settings").center_phone.value = centerPhone; $("#form-settings").prof_phone.value = profPhone; }
 }
 
 // ---------- 개인정보 동의 ----------
@@ -506,8 +509,11 @@ function step2() {
 const redNoteHTML = () => `<strong class="crisis-title">말해 줘서 고마워요.</strong><br />
   이 고민은 교수님이 직접 이야기를 듣고 싶어요. 신청을 보내면 교수님께 바로 알림이 가고, 먼저 연락드릴게요.<br />
   지금 많이 힘들다면 기다리지 말고 연락해 주세요.<br />
-  · 자살예방상담전화 <a href="tel:109">109</a> (24시간) · 정신건강위기상담 <a href="tel:15770199">1577-0199</a><br />
-  · ${centerHTML()} · 위급하면 <a href="tel:119">119</a> / <a href="tel:112">112</a>`;
+  · 자살예방상담전화 <a href="tel:109">109</a> (24시간)<br />
+  · 정신건강위기상담 <a href="tel:15770199">1577-0199</a> (24시간)<br />
+  · ${profHTML()}<br />
+  · ${centerHTML()}<br />
+  · 위급하면 <a href="tel:119">119</a> 또는 <a href="tel:112">112</a>`;
 function morePanelHTML() {
   return `<div class="opts">${concernItems(W.moreTab).map((c) => optHTML({ type: "checkbox", name: "concern", id: c.id, label: c.label, checked: W.concerns.includes(c.id) })).join("")}</div>`;
 }
@@ -604,6 +610,7 @@ function feedbackHTML(d) {
       보내 준 내용은 교수님이 가장 먼저 확인해요. 혼자 기다리기 힘들면 지금 바로 연락해 주세요.<br />
       · 자살예방상담전화 <a href="tel:109">109</a> (24시간)<br />
       · 정신건강위기상담 <a href="tel:15770199">1577-0199</a> (24시간)<br />
+      · ${profHTML()}<br />
       · ${centerHTML()}<br />
       · 위급하면 <a href="tel:119">119</a> 또는 <a href="tel:112">112</a></div>`;
   const tips = (d.concerns || []).map((id) => ITEMS.find((i) => i.id === id)).filter((i) => i && i.tip);
@@ -1461,9 +1468,12 @@ async function loadQuestions() {
 // 연락처 설정
 $("#form-settings").onsubmit = async (e) => {
   e.preventDefault();
-  const value = String(new FormData(e.target).get("center_phone")).trim();
-  const { error } = await sb.from("cs_settings").upsert({ key: "center_phone", value });
-  $("#settings-msg").textContent = error ? error.message : "저장했습니다. 학생 화면 하단과 위기 안내에 표시됩니다.";
+  const f = new FormData(e.target);
+  const { error } = await sb.from("cs_settings").upsert([
+    { key: "center_phone", value: String(f.get("center_phone")).trim() },
+    { key: "prof_phone", value: String(f.get("prof_phone")).trim() },
+  ]);
+  $("#settings-msg").textContent = error ? error.message : "저장했습니다. 학생상담센터 번호는 화면 하단과 긴급 안내에, 담당교수 번호는 로그인한 학생의 긴급 안내에만 보입니다.";
   if (!error) loadSettings();
 };
 
