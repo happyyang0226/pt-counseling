@@ -361,3 +361,15 @@ body.landing .area .area-p { font-size: 13px; line-height: 1.45; }
 #area-list-preview .area-ex { display: none; }
 .preview-result { text-align: left; margin: 14px 0; }
 .pending-note[hidden], #wizard[hidden] { display: none; }
+
+/* 졸업생 삭제 · 타임라인 */
+.purge-box { margin-top: 16px; padding: 12px 14px; border: 1px dashed #e3b4ae; border-radius: 10px; background: #fff8f7; }
+button.danger { color: #b23a2e; border-color: #e3b4ae; }
+.timeline { border-left: 3px solid #e2ddd5; margin-left: 6px; padding-left: 16px; }
+.tl { position: relative; margin-bottom: 14px; }
+.tl::before { content: ""; position: absolute; left: -24px; top: 16px; width: 13px; height: 13px; border-radius: 50%; background: #3d7a6a; border: 3px solid #fff; }
+.tl.req::before { background: #c9804f; }
+.tl.fb::before { background: #6b8fd6; }
+.tl-date { font-size: 13px; color: #6f6a62; margin: 0 0 4px; }
+#rule-days { flex-direction: row !important; flex-wrap: wrap; gap: 6px 16px; }
+#rule-days label { flex: 0 0 auto; }

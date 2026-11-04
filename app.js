@@ -982,7 +982,45 @@ $("#form-slot").onsubmit = async (e) => {
   loadSlots();
 };
 
+// 요일·시간 반복 규칙
+const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+function termEnd() { // 수업 끝 무렵 기본값: 2학기 12월 19일, 1학기 6월 19일
+  const t = today(), y = t.slice(0, 4), m = Number(t.slice(5, 7));
+  const e = m >= 7 ? `${y}-12-19` : m >= 3 ? `${y}-06-19` : `${y}-02-28`;
+  return e > t ? e : t;
+}
+$("#form-rule").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const msg = $("#rule-msg");
+  const wds = f.getAll("wd").map(Number);
+  if (!wds.length) return (msg.textContent = "요일을 하나 이상 골라 주세요.");
+  if (f.get("et") <= f.get("st")) return (msg.textContent = "끝 시간이 시작 시간보다 늦어야 합니다.");
+  const { data: rules, error } = await sb.from("cs_slot_rules").insert(wds.map((w) => ({
+    weekday: w, start_time: f.get("st"), end_time: f.get("et"), duration_min: Number(f.get("dur")),
+    valid_from: f.get("from"), valid_to: f.get("to") }))).select();
+  if (error) return (msg.textContent = error.message);
+  let made = 0;
+  for (const r of rules) {
+    const { data: n, error: ge } = await sb.rpc("cs_generate_slots", { p_rule_id: r.id });
+    if (ge) return (msg.textContent = ge.message);
+    made += n || 0;
+  }
+  msg.textContent = `상담 시간 ${made}개를 만들었습니다.`;
+  loadSlots();
+};
+
+async function loadRules() {
+  const fm = $("#form-rule");
+  if (!fm.from.value) fm.from.value = today();
+  if (!fm.to.value) fm.to.value = termEnd();
+  const { data } = await sb.from("cs_slot_rules").select("*").order("created_at", { ascending: false }).limit(20);
+  $("#rule-list").innerHTML = data?.length ? `<p class="hint" style="margin-top:8px">만든 규칙: ${data.map((r) =>
+    `매주 ${WEEKDAY[r.weekday]} ${r.start_time.slice(0, 5)}~${r.end_time.slice(0, 5)} (${r.duration_min}분, ${r.valid_from}~${r.valid_to})`).join(" · ")}</p>` : "";
+}
+
 async function loadSlots() {
+  loadRules();
   const { data, error } = await sb.from("cs_slots")
     .select("*, requests:cs_requests(status, profiles:cs_profiles(name))")
     .gte("starts_at", new Date().toISOString()).order("starts_at");
@@ -1045,16 +1083,32 @@ async function showHistory(s) {
   const fbByNote = {};
   (fbs || []).forEach((f) => (fbByNote[f.note_id] ||= []).push(f));
   const semN = (data || []).filter((n) => n.counsel_date >= sem.start).length;
+  // 신청 → 상담 기록(+보낸 피드백) → 기록과 따로 보낸 피드백을 날짜순 하나의 타임라인으로
+  const events = [
+    ...(reqs || []).map((r) => ({ at: r.created_at, kind: "req", r })),
+    ...(data || []).map((n) => ({ at: (n.created_at && n.created_at.slice(0, 10) === n.counsel_date) ? n.created_at : n.counsel_date + "T23:59:00+09:00", kind: "note", n })),
+    ...(fbs || []).filter((f) => !f.note_id).map((f) => ({ at: f.created_at, kind: "fb", f })),
+  ].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const evHTML = (ev) => {
+    if (ev.kind === "req") {
+      const r = ev.r;
+      return `<div class="tl req"><p class="tl-date">${new Date(r.created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })} · 상담 신청</p>
+        <div class="item ${r.crisis_flag ? "flag" : ""}"><b>${esc(LBL[r.area_id] || r.topic)}</b> · ${esc(LBL[r.mode_id] || r.mode)} <span class="badge s-${esc(r.status)}">${esc(r.status)}</span> ${worryBadge(r.worry_level)}
+        ${r.crisis_flag ? textFlagHTML : ""}${answerSummaryHTML(r)}</div></div>`;
+    }
+    if (ev.kind === "note") return `<div class="tl"><p class="tl-date">${fmtDate(ev.n.counsel_date)} · 상담 기록</p>${noteHTML(ev.n, fbByNote[ev.n.id] || [])}</div>`;
+    const f = ev.f;
+    return `<div class="tl fb"><p class="tl-date">${new Date(f.created_at).toLocaleDateString("ko-KR")} · 보낸 피드백</p>
+      <div class="item fb-sent"><span class="badge topic">${esc(f.topic)}</span> <span class="hint">${f.read_at ? "학생 확인함" : "학생 미확인"}</span>
+      <button class="small link-btn" data-fbdel="${f.id}">삭제</button><p>${esc(f.content)}</p></div></div>`;
+  };
   const box = $("#student-detail");
   show(box);
   box.innerHTML = `<div class="row between"><h2>${esc(s.name)} (${esc(s.student_no)}) ${classTag(s.student_no)} 상담 이력</h2>
       <button class="small primary" id="add-note">상담 기록·피드백 추가</button></div>
     <p class="hint">${sem.label} 상담 <b class="cnt ${semN >= REQUIRED ? "ok" : "c" + semN}">${semN}/${REQUIRED}회</b> · 개인정보 동의: ${s.consent_at ? new Date(s.consent_at).toLocaleDateString("ko-KR") : "아직 안 함"}</p>
-    <h3>상담 일지와 보낸 피드백</h3>` +
-    (data?.length ? data.map((n) => noteHTML(n, fbByNote[n.id] || [])).join("") : `<p class="hint">상담 일지가 없습니다.</p>`) +
-    `<h3>상담 신청 때 고른 응답</h3>` +
-    (reqs?.length ? reqs.map((r) => `<div class="item ${r.crisis_flag ? "flag" : ""}"><b>${new Date(r.created_at).toLocaleDateString("ko-KR")} · ${esc(LBL[r.area_id] || r.topic)}</b> <span class="badge s-${esc(r.status)}">${esc(r.status)}</span>
-      ${r.crisis_flag ? textFlagHTML : ""}${answerSummaryHTML(r)}</div>`).join("") : `<p class="hint">응답이 없습니다.</p>`);
+    <h3>상담 타임라인 <span class="hint">(최근 것이 위)</span></h3>` +
+    (events.length ? `<div class="timeline">${events.map(evHTML).join("")}</div>` : `<p class="hint">아직 신청이나 상담 기록이 없습니다.</p>`);
   $("#add-note").onclick = () => openNote(null, s);
   $$("[data-fbdel]", box).forEach((b) => (b.onclick = async () => {
     if (!confirm("이 피드백을 삭제할까요? 학생 화면에서도 사라집니다.")) return;
@@ -1109,18 +1163,72 @@ $("#export-summary").onclick = async () => {
 $("#export-notes").onclick = async () => {
   const withPrivate = $("#export-private").checked;
   if (withPrivate && !confirm("교수 메모가 포함된 파일입니다. 외부로 보내지 말고 안전하게 보관해 주세요. 내려받을까요?")) return;
-  const [{ data, error }, { data: fbs }] = await Promise.all([
+  const [{ data, error }, { data: fbs }, { data: rq }] = await Promise.all([
     sb.from("cs_notes").select("*, profiles:cs_profiles(name, student_no)").order("counsel_date"),
     sb.from("cs_feedback").select("note_id, topic, content"),
+    sb.from("cs_requests").select("id, mode, mode_id"),
   ]);
+  const modeOf = Object.fromEntries((rq || []).map((r) => [r.id, LBL[r.mode_id] || r.mode]));
   if (error) return alert(error.message);
   const fbText = {};
   (fbs || []).forEach((f) => (fbText[f.note_id] = (fbText[f.note_id] ? fbText[f.note_id] + "\n" : "") + `[${f.topic}] ${f.content}`));
-  const head = ["상담일", "반", "학번", "이름", "분야", "상담 내용", "교수 의견", ...(withPrivate ? ["교수 메모"] : []), "학생 피드백", "후속 조치", "다음 상담 예정일"];
+  const head = ["상담일", "반", "학번", "이름", "분야", "상담 방식", "상담 내용", "교수 의견", ...(withPrivate ? ["교수 메모"] : []), "학생 피드백", "후속 조치", "다음 상담 예정일"];
   const rows = [head, ...(data || []).filter((n) => inClass(n.profiles?.student_no)).map((n) => [n.counsel_date,
-    CLASS_NAME[CMAP[n.profiles?.student_no]] || "", n.profiles?.student_no, n.profiles?.name, n.topic, n.content, n.opinion,
+    CLASS_NAME[CMAP[n.profiles?.student_no]] || "", n.profiles?.student_no, n.profiles?.name, n.topic, n.request_id ? modeOf[n.request_id] || "" : "", n.content, n.opinion,
     ...(withPrivate ? [n.private_memo] : []), fbText[n.id] || "", n.followup, n.next_date])];
   downloadCSV(`상담기록_${classFilter ? CLASS_NAME[classFilter] + "_" : ""}${today()}.csv`, rows);
+};
+
+// 엑셀(.xlsx) 내보내기: 학생별·분야별 집계 + 상담 목록 (상담 내용·교수 메모 제외)
+$("#export-xlsx").onclick = async () => {
+  const btn = $("#export-xlsx");
+  btn.disabled = true;
+  try {
+    const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+    const sem = semesterStart();
+    const [{ data: students }, { data: notes }, { data: reqs }, { data: roster }] = await Promise.all([
+      sb.from("cs_profiles").select("id, name, student_no").eq("role", "student").order("student_no"),
+      sb.from("cs_notes").select("id, student_id, counsel_date, topic, request_id, needs_followup").order("counsel_date"),
+      sb.from("cs_requests").select("id, mode, mode_id"),
+      sb.from("cs_roster").select("student_no, name, class"),
+    ]);
+    const modeOf = Object.fromEntries((reqs || []).map((r) => [r.id, LBL[r.mode_id] || r.mode]));
+    const topicOf = (t) => (TOPICS.includes(t) ? t : "잘 모르겠어요");
+    const byNo = Object.fromEntries((students || []).map((s) => [s.student_no, s]));
+    const people = (roster || []).map((r) => ({ no: r.student_no, name: r.name, cls: r.class, id: byNo[r.student_no]?.id }));
+    (students || []).forEach((s) => { if (!people.some((p) => p.no === s.student_no)) people.push({ no: s.student_no, name: s.name, cls: CMAP[s.student_no], id: s.id }); });
+    const list = people.filter((p) => !classFilter || p.cls === classFilter)
+      .sort((a, b) => (a.cls || "Z").localeCompare(b.cls || "Z") || a.no.localeCompare(b.no));
+    const sheet1 = list.map((p) => {
+      const mine = (notes || []).filter((n) => n.student_id && n.student_id === p.id);
+      const semMine = mine.filter((n) => n.counsel_date >= sem.start);
+      const row = { 반: CLASS_NAME[p.cls] || "", 학번: p.no, 이름: p.name, 가입: p.id ? "가입" : "미가입" };
+      row[`${sem.label} 상담`] = semMine.length;
+      row[`의무 ${REQUIRED}회`] = semMine.length >= REQUIRED ? "충족" : "미달";
+      TOPICS.forEach((t) => (row[`${t}(이번 학기)`] = semMine.filter((n) => topicOf(n.topic) === t).length));
+      row["대면(이번 학기)"] = semMine.filter((n) => modeOf[n.request_id] === "대면").length;
+      row["온라인(이번 학기)"] = semMine.filter((n) => modeOf[n.request_id] === "온라인").length;
+      row["전체 상담"] = mine.length;
+      return row;
+    });
+    const ids = new Set(list.map((p) => p.id).filter(Boolean));
+    const who = Object.fromEntries((students || []).map((s) => [s.id, s]));
+    const sheet2 = (notes || []).filter((n) => ids.has(n.student_id)).map((n) => ({
+      상담일: n.counsel_date, 반: CLASS_NAME[CMAP[who[n.student_id]?.student_no]] || "", 학번: who[n.student_id]?.student_no || "",
+      이름: who[n.student_id]?.name || "", 분야: n.topic || "", "상담 방식": n.request_id ? (modeOf[n.request_id] || "") : "(신청 없이 기록)",
+      구분: n.request_id ? "신청 상담" : "정기·직접 기록", "후속 조치 필요": n.needs_followup ? "예" : "",
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(sheet1.length ? sheet1 : [{ 안내: "학생이 없습니다" }]);
+    const ws2 = XLSX.utils.json_to_sheet(sheet2.length ? sheet2 : [{ 안내: "상담 기록이 없습니다" }]);
+    ws1["!cols"] = Object.keys(sheet1[0] || { a: 1 }).map((k) => ({ wch: Math.max(6, k.length * 2) }));
+    ws2["!cols"] = Object.keys(sheet2[0] || { a: 1 }).map((k) => ({ wch: Math.max(8, k.length * 2) }));
+    XLSX.utils.book_append_sheet(wb, ws1, "학생별 집계");
+    XLSX.utils.book_append_sheet(wb, ws2, "상담 목록");
+    XLSX.writeFile(wb, `지도상담_${classFilter ? CLASS_NAME[classFilter] + "_" : ""}${sem.label}_${today()}.xlsx`);
+  } catch (err) {
+    alert("엑셀 파일을 만들지 못했습니다: " + err.message);
+  } finally { btn.disabled = false; }
 };
 
 // 후속 조치
@@ -1223,8 +1331,9 @@ async function loadRoster() {
   const nJoined = list.filter((r) => joined.has(r.student_no)).length;
   $("#roster-count").textContent = `(A반 ${cnt("A")}명 · B반 ${cnt("B")}명${roster.some((r) => !r.class) ? ` · 반 미지정 ${roster.filter((r) => !r.class).length}명` : ""} / 보이는 ${list.length}명 중 ${nJoined}명 가입)`;
   if (!list.length) return (box.innerHTML = `<p class="hint">아직 등록된 학생이 없습니다.</p>`);
-  box.innerHTML = `<table><thead><tr><th>반</th><th>학번</th><th>이름</th><th>가입</th><th></th></tr></thead><tbody>
+  box.innerHTML = `<table><thead><tr><th><input type="checkbox" id="pick-all" aria-label="모두 고르기" /></th><th>반</th><th>학번</th><th>이름</th><th>가입</th><th></th></tr></thead><tbody>
     ${list.map((r) => `<tr>
+      <td><input type="checkbox" class="pick" value="${esc(r.student_no)}" data-name="${esc(r.name)}" aria-label="${esc(r.name)} 고르기" /></td>
       <td><select class="cls-select" data-rcls="${esc(r.student_no)}">
         <option value="" ${r.class ? "" : "selected"}>-</option>
         <option value="A" ${r.class === "A" ? "selected" : ""}>A반</option>
@@ -1239,11 +1348,26 @@ async function loadRoster() {
     await refreshClassMap();
     loadRoster();
   }));
+  $("#pick-all").onchange = (e) => $$(".pick", box).forEach((c) => (c.checked = e.target.checked));
   $$("[data-rdel]", box).forEach((b) => (b.onclick = async () => {
     if (!confirm(`${b.dataset.rdel} 학생을 명단에서 뺄까요?`)) return;
     await sb.from("cs_roster").delete().eq("student_no", b.dataset.rdel);
     loadRoster();
   }));
 }
+
+// 졸업생 기록 일괄 삭제 (확인 2번)
+$("#purge-btn").onclick = async () => {
+  const picked = $$("#roster-list .pick").filter((c) => c.checked);
+  if (!picked.length) return alert("삭제할 학생을 표에서 먼저 체크해 주세요.");
+  const names = picked.map((c) => `${c.dataset.name}(${c.value})`);
+  if (!confirm(`다음 ${picked.length}명의 명단·계정·상담 신청·상담 기록·피드백을 모두 지웁니다.\n되돌릴 수 없습니다.\n\n${names.slice(0, 15).join(", ")}${names.length > 15 ? " 외" : ""}\n\n계속할까요?`)) return;
+  const typed = prompt(`정말 지우려면 아래 칸에 "삭제" 두 글자를 입력하세요. (${picked.length}명)`);
+  if (typed !== "삭제") return alert("입력이 맞지 않아 취소했습니다.");
+  const { data: n, error } = await sb.rpc("cs_purge_students", { p_student_nos: picked.map((c) => c.value) });
+  $("#roster-msg").textContent = error ? "삭제하지 못했습니다: " + error.message : `${picked.length}명을 명단에서 지웠습니다 (가입 계정과 상담 기록 ${n}명분 포함).`;
+  await refreshClassMap();
+  loadRoster();
+};
 
 boot();

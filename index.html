@@ -210,6 +210,31 @@
         <p id="slot-msg" class="msg"></p>
       </div>
       <div class="card">
+        <h2>요일·시간 반복으로 한 번에 열기</h2>
+        <p class="hint">요일과 시간대를 고르면 기간 안의 상담 시간이 상담 길이만큼 자동으로 만들어집니다. 이미 있는 시간은 건너뜁니다.</p>
+        <form id="form-rule">
+          <div class="row wrap" id="rule-days">
+            <label class="check"><input type="checkbox" name="wd" value="1" /> 월</label>
+            <label class="check"><input type="checkbox" name="wd" value="2" /> 화</label>
+            <label class="check"><input type="checkbox" name="wd" value="3" /> 수</label>
+            <label class="check"><input type="checkbox" name="wd" value="4" /> 목</label>
+            <label class="check"><input type="checkbox" name="wd" value="5" /> 금</label>
+          </div>
+          <div class="row wrap">
+            <label>시작<input type="time" name="st" value="14:00" required /></label>
+            <label>끝<input type="time" name="et" value="16:00" required /></label>
+            <label>상담 길이(분)<select name="dur"><option>20</option><option selected>30</option><option>40</option><option>50</option><option>60</option></select></label>
+          </div>
+          <div class="row wrap">
+            <label>시작 날짜<input type="date" name="from" required /></label>
+            <label>끝 날짜<input type="date" name="to" required /></label>
+            <button class="primary" type="submit">반복 시간 만들기</button>
+          </div>
+        </form>
+        <p id="rule-msg" class="msg"></p>
+        <div id="rule-list"></div>
+      </div>
+      <div class="card">
         <h2>앞으로의 상담 시간</h2>
         <div id="slot-list"></div>
       </div>
@@ -218,8 +243,9 @@
     <div id="admin-students" class="adminpane hidden">
       <div class="card">
         <h2>학기말 보고용 내보내기</h2>
-        <p class="hint">엑셀에서 바로 열 수 있는 CSV 파일로 내려받습니다.</p>
+        <p class="hint">엑셀 파일(.xlsx)에는 학생별·분야별 집계와 상담 목록(반·상담 방식 포함)이 두 시트로 들어가고, 상담 내용과 교수 메모는 들어가지 않습니다. CSV도 그대로 받을 수 있습니다.</p>
         <div class="row wrap">
+          <button class="small primary" id="export-xlsx">엑셀(.xlsx)로 받기</button>
           <button class="small" id="export-summary">학생별·분야별 상담 횟수</button>
           <button class="small" id="export-notes">상담 기록 전체</button>
           <label class="check"><input type="checkbox" id="export-private" /> 교수 메모 포함</label>
@@ -286,6 +312,11 @@
           <h2>등록된 명단 <span id="roster-count" class="hint"></span></h2>
         </div>
         <div id="roster-list"></div>
+        <div class="purge-box">
+          <h3>졸업생 기록 일괄 삭제</h3>
+          <p class="hint">위 표에서 체크한 학생의 명단·계정·상담 신청·상담 기록·피드백을 모두 지웁니다. 되돌릴 수 없습니다. (익명 질문은 누가 썼는지 몰라 지우지 않습니다.)</p>
+          <button class="small danger" id="purge-btn">체크한 학생 기록 삭제</button>
+        </div>
       </div>
     </div>
   </section>
