@@ -199,6 +199,65 @@ $("#form-student-login").onsubmit = async (e) => {
   boot();
 };
 
+// ---------- 접속 코드 분실 → 교수 허용 → 새 코드 ----------
+let resetTimer = null;
+const resetForm = () => $("#form-student-reset");
+const resetWho = () => { const f = resetForm(); return { p_no: f.student_no.value.trim(), p_name: f.name.value.trim() }; };
+function resetStage(stage) {
+  $("#reset-ask").hidden = stage !== "ask";
+  $("#reset-wait").hidden = stage !== "wait";
+  $("#reset-new").hidden = stage !== "new";
+  resetForm().student_no.readOnly = resetForm().name.readOnly = stage !== "ask";
+  ["code", "code2"].forEach((n) => (resetForm()[n].required = stage === "new"));
+  clearInterval(resetTimer);
+  if (stage === "wait") resetTimer = setInterval(() => checkReset(true), 15000);
+  if (stage === "new") resetForm().code.focus();
+}
+function openReset(open) {
+  $$("#view-login .tabpane").forEach((p) => show(p, p.id === (open ? "form-student-reset" : "form-student-login")));
+  $$("#view-login .tab").forEach((x) => x.classList.toggle("active", !open && x.dataset.tab === "student-login"));
+  $("#login-msg").textContent = "";
+  if (open) { const no = $("#form-student-login").student_no.value; if (no) resetForm().student_no.value = no; resetStage("ask"); }
+  else clearInterval(resetTimer);
+}
+$("#go-reset").onclick = () => openReset(true);
+$("#reset-back").onclick = () => openReset(false);
+$("#reset-request").onclick = async () => {
+  const w = resetWho(), msg = (t) => ($("#login-msg").textContent = t);
+  if (!/^\d{4,12}$/.test(w.p_no) || !w.p_name) return msg("학번과 이름을 모두 넣어 주세요.");
+  const { data, error } = await sb.rpc("cs_request_code_reset", w);
+  if (error) return msg("요청하지 못했어요: " + error.message);
+  if (data === "not_found") return msg("가입된 학번과 이름이 맞지 않아요. 아직 가입 전이라면 '학생 가입'에서 새로 가입해 주세요.");
+  msg("");
+  if (data === "approved") return resetStage("new");
+  toast("교수님께 요청을 보냈어요.");
+  resetStage("wait");
+};
+async function checkReset(quiet) {
+  const { data } = await sb.rpc("cs_code_reset_status", resetWho());
+  if (data === "approved") { resetStage("new"); toast("교수님이 허용했어요. 새 접속 코드를 정해 주세요."); }
+  else if (data === "none") { resetStage("ask"); $("#login-msg").textContent = "허용 시간이 지났거나 요청이 없어요. 다시 요청해 주세요."; }
+  else if (!quiet) toast("아직 허용 전이에요. 조금만 기다려 주세요.");
+}
+$("#reset-check").onclick = () => checkReset(false);
+resetForm().onsubmit = async (e) => {
+  e.preventDefault();
+  const f = resetForm(), w = resetWho(), msg = (t) => ($("#login-msg").textContent = t);
+  if ($("#reset-new").hidden) return;
+  if (f.code.value.length < 6) return msg("접속 코드는 6자 이상으로 정해 주세요.");
+  if (f.code.value !== f.code2.value) return msg("새 접속 코드가 서로 달라요.");
+  const { data, error } = await sb.rpc("cs_reset_code", { ...w, p_new: f.code.value });
+  if (error) return msg("바꾸지 못했어요: " + error.message);
+  if (data === "not_approved") { resetStage("ask"); return msg("허용 시간(30분)이 지났어요. 다시 요청해 주세요."); }
+  if (data === "wrong") return msg("학번과 이름이 맞지 않아요.");
+  if (data !== "ok") return msg("바꾸지 못했어요.");
+  const { error: le } = await sb.auth.signInWithPassword({ email: studentEmail(w.p_no), password: f.code.value });
+  f.reset(); openReset(false);
+  if (le) return msg("새 코드로 바뀌었어요. 학번과 새 코드로 로그인해 주세요.");
+  toast("새 접속 코드로 바뀌었어요. 이번엔 꼭 기억해 두세요 🙂");
+  boot();
+};
+
 $("#form-student-signup").onsubmit = async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
@@ -1037,8 +1096,34 @@ async function loadClassBoard() {
 }
 
 // 대시보드
+async function loadResets() {
+  const { data } = await sb.from("cs_code_resets").select("*").is("used_at", null)
+    .gte("requested_at", new Date(Date.now() - 864e5).toISOString()).order("requested_at", { ascending: false });
+  const now = Date.now();
+  const rows = (data || []).filter((r) => !r.approved_at || new Date(r.expires_at) > now);
+  $("#reset-card").hidden = !rows.length;
+  $("#reset-list").innerHTML = rows.map((r) => `<div class="reset-row">
+      <div><b>${esc(r.name)}</b> <small>${esc(r.student_no)}</small><br><small class="hint">${fmt(r.requested_at)} 요청</small></div>
+      ${r.approved_at
+        ? `<span class="badge s-확정">허용됨 · ${new Date(r.expires_at).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" })}까지</span>`
+        : `<div class="row-btns"><button class="primary small" data-rok="${r.id}">허용</button><button class="small" data-rno="${r.id}">지우기</button></div>`}
+    </div>`).join("");
+  $$("#reset-list [data-rok]").forEach((b) => (b.onclick = async () => {
+    const { error } = await sb.rpc("cs_approve_code_reset", { p_id: b.dataset.rok });
+    if (error) return alert(error.message);
+    toast("허용했어요. 학생 화면이 바로 새 코드 정하기로 바뀌어요.");
+    loadResets();
+  }));
+  $$("#reset-list [data-rno]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("이 요청을 지울까요? 학생은 다시 요청해야 해요.")) return;
+    await sb.rpc("cs_dismiss_code_reset", { p_id: b.dataset.rno });
+    loadResets();
+  }));
+}
+
 async function loadDashboard() {
   loadClassBoard();
+  loadResets();
   const sem = semesterStart();
   const now = new Date(), week = new Date(now.getTime() + 7 * 864e5);
   const since7 = new Date(Date.now() - 6 * 864e5).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
@@ -1770,6 +1855,14 @@ function startAdminAlerts() {
         n.onclick = () => { window.focus(); newCount = 0; paintAlertBar(); loadAdmin(urgent ? "dashboard" : "requests"); n.close(); };
       }
       if (["dashboard", "requests"].includes(curPane)) loadAdmin(curPane);
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "cs_code_resets" }, ({ eventType, new: r }) => {
+      if (eventType === "INSERT" || (eventType === "UPDATE" && r && !r.approved_at && !r.used_at)) {
+        chime(false);
+        toast(`🔑 ${r.name}(${r.student_no}) 학생이 접속 코드 재설정을 요청했어요. 첫 화면에서 허용해 주세요.`);
+        if (notifOK() && !pushOn) new Notification("🔑 접속 코드 재설정 요청", { body: `${r.name}(${r.student_no})`, tag: "code-reset" });
+      }
+      if (curPane === "dashboard") loadResets();
     })
     .subscribe();
 }

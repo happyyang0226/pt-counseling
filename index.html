@@ -51,6 +51,32 @@
       <label>학번<input name="student_no" required inputmode="numeric" autocomplete="username" /></label>
       <label>접속 코드<input name="code" type="password" required minlength="6" autocomplete="current-password" /></label>
       <button class="primary" type="submit">로그인</button>
+      <button type="button" class="linkish" id="go-reset">🔑 접속 코드를 잊었어요</button>
+    </form>
+
+    <form id="form-student-reset" class="tabpane hidden">
+      <h3 class="reset-title">🔑 접속 코드 다시 만들기</h3>
+      <ol class="reset-steps">
+        <li>학번과 이름을 넣고 <b>교수님께 요청</b>을 눌러요.</li>
+        <li>교수님이 <b>허용</b>하면 이 화면에서 바로 알 수 있어요.</li>
+        <li>30분 안에 새 접속 코드를 정하면 바로 로그인돼요.</li>
+      </ol>
+      <label>학번<input name="student_no" required inputmode="numeric" autocomplete="username" /></label>
+      <label>이름<input name="name" required autocomplete="name" /></label>
+      <div id="reset-ask">
+        <button class="primary" type="button" id="reset-request">교수님께 요청</button>
+      </div>
+      <div id="reset-wait" class="reset-box" hidden>
+        <p>⏳ 교수님 허용을 기다리고 있어요. 이 화면을 열어 두면 허용되는 순간 바뀌어요.</p>
+        <button type="button" id="reset-check">허용됐는지 확인</button>
+      </div>
+      <div id="reset-new" class="reset-box ok" hidden>
+        <p>✅ 교수님이 허용했어요. 새 접속 코드를 정해 주세요.</p>
+        <label>새 접속 코드 (6자 이상)<input name="code" type="password" minlength="6" autocomplete="new-password" /></label>
+        <label>새 접속 코드 확인<input name="code2" type="password" minlength="6" autocomplete="new-password" /></label>
+        <button class="primary" type="submit">새 코드로 로그인</button>
+      </div>
+      <button type="button" class="linkish" id="reset-back">← 로그인으로 돌아가기</button>
     </form>
 
     <form id="form-student-signup" class="tabpane hidden">
@@ -208,6 +234,11 @@
     </nav>
 
     <div id="admin-dashboard" class="adminpane">
+      <div class="card reset-card" id="reset-card" hidden>
+        <h3>🔑 접속 코드 재설정 요청</h3>
+        <p class="hint">본인이 맞는지 확인한 뒤 허용해 주세요. 허용하면 30분 동안 학생이 새 코드를 정할 수 있어요.</p>
+        <div id="reset-list"></div>
+      </div>
       <div class="stats" id="dash-stats"></div>
       <div class="card" id="class-board-card">
         <div class="row between">

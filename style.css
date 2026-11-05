@@ -684,3 +684,16 @@ table.board tr.muted-row td { opacity: .6; }
 .alert-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--card); border-radius: 16px; box-shadow: var(--shadow);
   padding: 10px 14px; margin-bottom: 12px; font-size: 14px; color: var(--ink); }
 .alert-bar #alert-state { flex: 1 1 220px; }
+
+/* ---------- 접속 코드 재설정 ---------- */
+.linkish { background: none; border: 0; box-shadow: none; color: var(--accent, #5b67e8); padding: .6rem 0 0; font-size: .92rem; text-decoration: underline; text-underline-offset: 3px; width: auto; }
+.reset-title { margin: 0 0 .4rem; }
+.reset-steps { margin: 0 0 .8rem 1.1rem; padding: 0; font-size: .92rem; line-height: 1.6; }
+.reset-box { border-radius: 16px; padding: .8rem 1rem; margin: .6rem 0; background: color-mix(in srgb, var(--accent, #5b67e8) 10%, transparent); }
+.reset-box.ok { background: color-mix(in srgb, #2fb67c 14%, transparent); }
+.reset-box p { margin: 0 0 .5rem; }
+.reset-card { border: 2px solid color-mix(in srgb, #f4b740 60%, transparent); }
+.reset-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .6rem 0; border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
+.reset-row:first-child { border-top: 0; }
+.row-btns { display: flex; gap: .4rem; flex-shrink: 0; }
+input[readonly] { opacity: .7; }
