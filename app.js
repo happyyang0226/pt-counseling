@@ -124,6 +124,12 @@ function resetIdle() {
 async function boot() {
   await loadItems();
   renderAreas();
+  // 학습 포털 교수 통합 로그인: 포털이 넘긴 한 번 쓰는 표(#sso=)로 로그인하고 주소에서 바로 지움
+  const ssoT = (location.hash.match(/^#sso=([A-Za-z0-9_-]+)/) || [])[1];
+  if (ssoT) {
+    history.replaceState(null, "", location.pathname + location.search);
+    try { await sb.auth.verifyOtp({ token_hash: ssoT, type: "magiclink" }); } catch (e) { }
+  }
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return showLogin(sessionStorage.getItem("logout-msg") || "");
   sessionStorage.removeItem("logout-msg");
